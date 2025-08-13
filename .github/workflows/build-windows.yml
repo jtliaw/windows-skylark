@@ -126,20 +126,21 @@ jobs:
       run: |
         .\venv\Scripts\Activate.ps1
         
-        python -c "
+        # Create Python script for language pack installation
+        $pythonScript = @'
 import sys
 import argostranslate.package
 import argostranslate.translate
 
 try:
-    print('Updating package index...')
+    print("Updating package index...")
     argostranslate.package.update_package_index()
     
     available_packages = argostranslate.package.get_available_packages()
-    print(f'Found {len(available_packages)} available packages')
+    print(f"Found {len(available_packages)} available packages")
     
     # Select language pairs to install
-    desired_langs = ['en', 'zh', 'ja', 'ko', 'de', 'fr', 'es']
+    desired_langs = ["en", "zh", "ja", "ko", "de", "fr", "es"]
     target_packages = [
         pkg for pkg in available_packages
         if pkg.from_code in desired_langs and pkg.to_code in desired_langs
@@ -150,26 +151,30 @@ try:
     
     for i, pkg in enumerate(target_packages[:max_packages]):
         try:
-            print(f'[{i+1}/{min(len(target_packages), max_packages)}] Installing: {pkg.from_code} -> {pkg.to_code}')
+            print(f"[{i+1}/{min(len(target_packages), max_packages)}] Installing: {pkg.from_code} -> {pkg.to_code}")
             download_path = pkg.download()
             argostranslate.package.install_from_path(download_path)
             installed_count += 1
-            print('✅ Installed successfully')
+            print("✅ Installed successfully")
         except Exception as e:
-            print(f'❌ Installation failed: {e}')
+            print(f"❌ Installation failed: {e}")
     
-    print(f'Successfully installed {installed_count} language packages')
+    print(f"Successfully installed {installed_count} language packages")
     
     # Test translation
     installed_packages = argostranslate.package.get_installed_packages()
     if installed_packages:
-        test_result = argostranslate.translate.translate('Hello world', 'en', 'zh')
-        print(f'Test translation: Hello world -> {test_result}')
+        test_result = argostranslate.translate.translate("Hello world", "en", "zh")
+        print(f"Test translation: Hello world -> {test_result}")
         
 except Exception as e:
-    print(f'Language pack installation error: {e}')
-    print('Basic framework still available')
-"
+    print(f"Language pack installation error: {e}")
+    print("Basic framework still available")
+'@
+        
+        $pythonScript | Out-File -FilePath "install_language_packs.py" -Encoding UTF8
+        python install_language_packs.py
+        Remove-Item "install_language_packs.py" -ErrorAction SilentlyContinue
       shell: powershell
       
     - name: Check source files and create enhancements
@@ -183,8 +188,90 @@ except Exception as e:
         # Create enhanced online_translator.py if it doesn't exist
         if (-not (Test-Path "online_translator.py")) {
           Write-Host "Creating enhanced online_translator.py..."
-          # Create the enhanced translator file here
-          # (Content would be added here - truncated for brevity)
+          
+          # Create a basic online_translator.py file
+          $translatorContent = @'
+#!/usr/bin/env python3
+import logging
+import os
+import sys
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class OnlineTranslator:
+    def __init__(self):
+        self.name = "Enhanced Translator (Windows)"
+        self.installed_packages = []
+        self.argos_available = False
+        self.initialize_argos()
+        
+    def initialize_argos(self):
+        try:
+            import argostranslate.package
+            import argostranslate.translate
+            self.argos_package = argostranslate.package
+            self.argos_translate = argostranslate.translate
+            self.installed_packages = self.argos_package.get_installed_packages()
+            self.argos_available = True
+            logger.info(f"ArgosTranslate initialized with {len(self.installed_packages)} packages")
+        except ImportError:
+            logger.warning("ArgosTranslate not available")
+            self.argos_available = False
+            
+    def translate(self, text, source_lang='auto', target_lang='en'):
+        if not text or not text.strip():
+            return text
+            
+        try:
+            if self.argos_available and hasattr(self, 'argos_translate'):
+                source_lang = self._normalize_lang_code(source_lang, text)
+                target_lang = self._normalize_lang_code(target_lang)
+                
+                available_pair = self._find_translation_pair(source_lang, target_lang)
+                if available_pair:
+                    result = self.argos_translate.translate(text, source_lang, target_lang)
+                    if result and result != text:
+                        return result
+        except Exception as e:
+            logger.error(f"Translation failed: {e}")
+            
+        return f"[Translation failed] {text}"
+        
+    def _normalize_lang_code(self, lang_code, text=None):
+        if lang_code == 'auto' and text:
+            return self._detect_language(text)
+        lang_mapping = {
+            'zh-cn': 'zh', 'zh-tw': 'zh', 'chinese': 'zh',
+            'japanese': 'ja', 'korean': 'ko', 'german': 'de',
+            'french': 'fr', 'spanish': 'es', 'english': 'en'
+        }
+        return lang_mapping.get(lang_code.lower(), lang_code.lower())
+        
+    def _detect_language(self, text):
+        if any('\u4e00' <= char <= '\u9fff' for char in text):
+            return 'zh'
+        elif any('\u3040' <= char <= '\u309f' or '\u30a0' <= char <= '\u30ff' for char in text):
+            return 'ja'
+        elif any('\uac00' <= char <= '\ud7af' for char in text):
+            return 'ko'
+        else:
+            return 'en'
+            
+    def _find_translation_pair(self, from_lang, to_lang):
+        for pkg in self.installed_packages:
+            if pkg.from_code == from_lang and pkg.to_code == to_lang:
+                return True
+        return False
+
+default_translator = OnlineTranslator()
+
+def translate_text(text, source_lang='auto', target_lang='en', translator_name=None):
+    return default_translator.translate(text, source_lang, target_lang)
+'@
+          
+          $translatorContent | Out-File -FilePath "online_translator.py" -Encoding UTF8
+          Write-Host "Enhanced online_translator.py created"
         }
         
         Write-Host "Source files verified"
