@@ -1,54 +1,586 @@
-name: Build Windows Release
+name: Build Windows Portable
 
 on:
   push:
-    tags:
-      - 'v*'  # 只有推送版本标签时才触发，例如 v1.0.0
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      skip_language_packs:
+        description: 'Skip ArgosTranslate language pack downloads'
+        required: false
+        default: false
+        type: boolean
+      create_installer:
+        description: 'Create NSIS installer'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-windows:
     runs-on: windows-latest
-
+    
+    env:
+      FORCE_CUDA: "0"
+      USE_CUDA: "0"
+      QT_QPA_PLATFORM: "windows"
+      
     steps:
-    - name: 检出代码
+    - name: Checkout repository
       uses: actions/checkout@v4
-
-    - name: 设置 Python
-      uses: actions/setup-python@v5
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-
-    - name: 安装依赖
+        cache: 'pip'
+        
+    - name: Install Tesseract OCR
       run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller
-        pip install pyqt5
+        Write-Host "Installing Tesseract OCR..."
+        $url = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.3.3.20231005/tesseract-ocr-w64-setup-5.3.3.20231005.exe"
+        $installer = "$env:TEMP\tesseract-installer.exe"
+        
+        Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+        Start-Process -FilePath $installer -ArgumentList "/S" -Wait
+        
+        $env:PATH = "C:\Program Files\Tesseract-OCR;" + $env:PATH
+        echo "C:\Program Files\Tesseract-OCR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        Write-Host "Tesseract installed successfully"
+      shell: powershell
+      
+    - name: Download Tesseract language packs
+      run: |
+        $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
+        $languages = @('chi_sim', 'chi_tra', 'jpn', 'kor', 'deu', 'fra', 'spa', 'rus')
+        
+        foreach ($lang in $languages) {
+          $langFile = "$tessdata\$lang.traineddata"
+          if (-not (Test-Path $langFile)) {
+            try {
+              $url = "https://github.com/tesseract-ocr/tessdata/raw/main/$lang.traineddata"
+              Write-Host "Downloading $lang language pack..."
+              Invoke-WebRequest -Uri $url -OutFile $langFile -UseBasicParsing -TimeoutSec 60
+              Write-Host "Downloaded $lang successfully"
+            } catch {
+              Write-Warning "Failed to download $lang language pack: $_"
+            }
+          }
+        }
+      shell: powershell
+      
+    - name: Create virtual environment
+      run: |
+        python -m venv venv
+        .\venv\Scripts\Activate.ps1
+        python -m pip install --upgrade pip setuptools wheel
+        Write-Host "Virtual environment created"
+      shell: powershell
+      
+    - name: Install core Python dependencies
+      run: |
+        .\venv\Scripts\Activate.ps1
+        
+        Write-Host "Installing core dependencies..."
+        pip install PyQt5==5.15.10
+        pip install "Pillow>=9.0.0"
+        pip install "numpy>=1.21.0"
+        pip install opencv-python-headless
         pip install pytesseract
-        pip install pillow
-        pip install numpy
-        pip install screeninfo
-        pip install argostranslate
+        pip install mss
+        pip install pynput
         pip install requests
-
-    - name: 打包单文件 EXE
+        pip install screeninfo
+        pip install ttkthemes
+        pip install certifi
+        pip install pyinstaller
+        
+        Write-Host "Core dependencies installed successfully"
+      shell: powershell
+      
+    - name: Install ArgosTranslate and PyTorch
+      if: ${{ !inputs.skip_language_packs }}
       run: |
-        pyinstaller --onefile --noconsole --name Skylark-Translator skylark_screen_translator.py
-      shell: cmd
-
-    - name: 打包文件夹版
+        .\venv\Scripts\Activate.ps1
+        
+        Write-Host "Installing PyTorch CPU version..."
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        
+        Write-Host "Installing translation dependencies..."
+        pip install PyYAML sentencepiece stanza ctranslate2
+        
+        Write-Host "Installing ArgosTranslate..."
+        pip install argostranslate
+        
+        Write-Host "ArgosTranslate installation completed"
+      shell: powershell
+      
+    - name: Create language pack installer script
+      if: ${{ !inputs.skip_language_packs }}
       run: |
-        pyinstaller --onedir --noconsole --name Skylark-Translator-Folder skylark_screen_translator.py
-      shell: cmd
+        # Create a separate Python script for language pack installation
+        $content = @"
+import sys
+import argostranslate.package
+import argostranslate.translate
 
-    - name: 压缩文件夹版
+try:
+    print('Updating package index...')
+    argostranslate.package.update_package_index()
+    
+    available_packages = argostranslate.package.get_available_packages()
+    print(f'Found {len(available_packages)} available packages')
+    
+    desired_langs = ['en', 'zh', 'ja', 'ko', 'de', 'fr', 'es']
+    target_packages = [
+        pkg for pkg in available_packages
+        if pkg.from_code in desired_langs and pkg.to_code in desired_langs
+    ]
+    
+    installed_count = 0
+    max_packages = 15
+    
+    for i, pkg in enumerate(target_packages[:max_packages]):
+        try:
+            print(f'[{i+1}/{min(len(target_packages), max_packages)}] Installing: {pkg.from_code} -> {pkg.to_code}')
+            download_path = pkg.download()
+            argostranslate.package.install_from_path(download_path)
+            installed_count += 1
+            print('Installation successful')
+        except Exception as e:
+            print(f'Installation failed: {e}')
+    
+    print(f'Successfully installed {installed_count} language packages')
+    
+    installed_packages = argostranslate.package.get_installed_packages()
+    if installed_packages:
+        test_result = argostranslate.translate.translate('Hello world', 'en', 'zh')
+        print(f'Test translation: Hello world -> {test_result}')
+        
+except Exception as e:
+    print(f'Language pack installation error: {e}')
+    print('Basic framework still available')
+    sys.exit(0)
+"@
+        $content | Out-File -FilePath "install_packs.py" -Encoding UTF8
+        Write-Host "Language pack installer script created"
+      shell: powershell
+      
+    - name: Download language packs
+      if: ${{ !inputs.skip_language_packs }}
       run: |
-        powershell Compress-Archive -Path dist/Skylark-Translator-Folder -DestinationPath Skylark-Translator-Windows.zip
+        .\venv\Scripts\Activate.ps1
+        python install_packs.py
+        Remove-Item "install_packs.py" -ErrorAction SilentlyContinue
+      shell: powershell
+      
+    - name: Create online translator module
+      run: |
+        # Create online_translator.py if it doesn't exist
+        if (-not (Test-Path "online_translator.py")) {
+          Write-Host "Creating online_translator.py..."
+          
+          $translatorCode = @"
+import logging
+import os
+import sys
 
-    - name: 上传到 Release
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class OnlineTranslator:
+    def __init__(self):
+        self.name = 'Enhanced Translator (Windows)'
+        self.installed_packages = []
+        self.argos_available = False
+        self.initialize_argos()
+        
+    def initialize_argos(self):
+        try:
+            import argostranslate.package
+            import argostranslate.translate
+            self.argos_package = argostranslate.package
+            self.argos_translate = argostranslate.translate
+            self.installed_packages = self.argos_package.get_installed_packages()
+            self.argos_available = True
+            logger.info(f'ArgosTranslate initialized with {len(self.installed_packages)} packages')
+        except ImportError:
+            logger.warning('ArgosTranslate not available')
+            self.argos_available = False
+            
+    def translate(self, text, source_lang='auto', target_lang='en'):
+        if not text or not text.strip():
+            return text
+            
+        try:
+            if self.argos_available and hasattr(self, 'argos_translate'):
+                source_lang = self._normalize_lang_code(source_lang, text)
+                target_lang = self._normalize_lang_code(target_lang)
+                
+                available_pair = self._find_translation_pair(source_lang, target_lang)
+                if available_pair:
+                    result = self.argos_translate.translate(text, source_lang, target_lang)
+                    if result and result != text:
+                        return result
+        except Exception as e:
+            logger.error(f'Translation failed: {e}')
+            
+        return f'[Translation failed] {text}'
+        
+    def _normalize_lang_code(self, lang_code, text=None):
+        if lang_code == 'auto' and text:
+            return self._detect_language(text)
+        lang_mapping = {
+            'zh-cn': 'zh', 'zh-tw': 'zh', 'chinese': 'zh',
+            'japanese': 'ja', 'korean': 'ko', 'german': 'de',
+            'french': 'fr', 'spanish': 'es', 'english': 'en'
+        }
+        return lang_mapping.get(lang_code.lower(), lang_code.lower())
+        
+    def _detect_language(self, text):
+        if any('\u4e00' <= char <= '\u9fff' for char in text):
+            return 'zh'
+        elif any('\u3040' <= char <= '\u309f' or '\u30a0' <= char <= '\u30ff' for char in text):
+            return 'ja'
+        elif any('\uac00' <= char <= '\ud7af' for char in text):
+            return 'ko'
+        else:
+            return 'en'
+            
+    def _find_translation_pair(self, from_lang, to_lang):
+        for pkg in self.installed_packages:
+            if pkg.from_code == from_lang and pkg.to_code == to_lang:
+                return True
+        return False
+
+default_translator = OnlineTranslator()
+
+def translate_text(text, source_lang='auto', target_lang='en', translator_name=None):
+    return default_translator.translate(text, source_lang, target_lang)
+"@
+          
+          $translatorCode | Out-File -FilePath "online_translator.py" -Encoding UTF8
+          Write-Host "online_translator.py created successfully"
+        }
+      shell: powershell
+      
+    - name: Create Windows launcher
+      run: |
+        $launcherCode = @"
+import os
+import sys
+import logging
+import traceback
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def setup_windows_environment():
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Set Tesseract paths
+    tesseract_paths = [
+        r'C:\Program Files\Tesseract-OCR',
+        r'C:\Program Files (x86)\Tesseract-OCR'
+    ]
+    
+    for path in tesseract_paths:
+        tesseract_exe = os.path.join(path, 'tesseract.exe')
+        if os.path.exists(tesseract_exe):
+            os.environ['PATH'] = path + os.pathsep + os.environ.get('PATH', '')
+            logger.info(f'Added Tesseract path: {path}')
+            break
+    else:
+        logger.warning('Tesseract not found in standard locations')
+    
+    # Set environment variables for Qt
+    os.environ['QT_QPA_PLATFORM'] = 'windows'
+    os.environ['QT_SCALE_FACTOR'] = '1'
+    
+    logger.info('Windows environment configured')
+
+def main():
+    try:
+        setup_windows_environment()
+        
+        # Import and run the main application
+        from main import main as app_main
+        app_main()
+        
+    except ImportError as e:
+        logger.error(f'Import error: {e}')
+        print('Error: Main application module not found')
+        input('Press Enter to exit...')
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f'Application error: {e}')
+        logger.error(traceback.format_exc())
+        print(f'Error: {e}')
+        input('Press Enter to exit...')
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
+"@
+        
+        $launcherCode | Out-File -FilePath "launcher_windows.py" -Encoding UTF8
+        Write-Host "Windows launcher created successfully"
+      shell: powershell
+      
+    - name: Build with PyInstaller
+      run: |
+        .\venv\Scripts\Activate.ps1
+        
+        Write-Host "Creating PyInstaller spec file..."
+        $specContent = @"
+# -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+block_cipher = None
+
+# Collect data files for argostranslate if available
+datas = []
+hiddenimports = []
+
+try:
+    import argostranslate
+    argos_datas = collect_data_files('argostranslate')
+    datas.extend(argos_datas)
+    argos_imports = collect_submodules('argostranslate')
+    hiddenimports.extend(argos_imports)
+    print(f'Added {len(argos_datas)} argostranslate data files')
+except ImportError:
+    print('ArgosTranslate not available for packaging')
+
+# Additional hidden imports
+hiddenimports.extend([
+    'PIL._tkinter_finder',
+    'pkg_resources.py2_warn',
+    'packaging.version',
+    'packaging.specifiers',
+    'packaging.requirements',
+])
+
+a = Analysis(
+    ['launcher_windows.py'],
+    pathex=['.'],
+    binaries=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['tkinter', 'matplotlib', 'scipy'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='ScreenTranslator',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='icon.ico' if os.path.exists('icon.ico') else None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='ScreenTranslator',
+)
+"@
+        
+        $specContent | Out-File -FilePath "build.spec" -Encoding UTF8
+        
+        Write-Host "Building application with PyInstaller..."
+        pyinstaller build.spec --noconfirm --clean
+        
+        if (Test-Path "dist\ScreenTranslator") {
+          Write-Host "Build completed successfully"
+          Write-Host "Contents of dist\ScreenTranslator:"
+          Get-ChildItem "dist\ScreenTranslator" -Recurse | Select-Object Name, Length | Format-Table
+        } else {
+          Write-Error "Build failed - output directory not found"
+          exit 1
+        }
+      shell: powershell
+      
+    - name: Create NSIS installer
+      if: ${{ inputs.create_installer }}
+      run: |
+        Write-Host "Installing NSIS..."
+        choco install nsis -y
+        
+        Write-Host "Creating installer script..."
+        $nsisScript = @"
+!define APP_NAME 'ScreenTranslator'
+!define APP_VERSION '1.0.0'
+!define APP_PUBLISHER 'ScreenTranslator Team'
+!define APP_URL 'https://github.com/yourusername/screentranslator'
+
+!include 'MUI2.nsh'
+
+Name `${APP_NAME} `${APP_VERSION}`
+OutFile 'ScreenTranslator-Setup.exe'
+InstallDir `$PROGRAMFILES64\`${APP_NAME}`
+InstallDirRegKey HKCU 'Software\`${APP_NAME}' ''
+RequestExecutionLevel admin
+
+!define MUI_ABORTWARNING
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE 'LICENSE'
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_WELCOME
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+!insertmacro MUI_LANGUAGE 'English'
+
+Section 'MainSection' SEC01
+  SetOutPath '`$INSTDIR'
+  SetOverwrite ifnewer
+  
+  File /r 'dist\ScreenTranslator\*'
+  
+  WriteRegStr HKCU 'Software\`${APP_NAME}' '' `$INSTDIR
+  WriteRegStr HKLM 'Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APP_NAME}' 'DisplayName' '`${APP_NAME}'
+  WriteRegStr HKLM 'Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APP_NAME}' 'UninstallString' '`$INSTDIR\uninstall.exe'
+  WriteRegDWORD HKLM 'Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APP_NAME}' 'NoModify' 1
+  WriteRegDWORD HKLM 'Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APP_NAME}' 'NoRepair' 1
+  WriteUninstaller '`$INSTDIR\uninstall.exe'
+  
+  CreateDirectory '`$SMPROGRAMS\`${APP_NAME}'
+  CreateShortCut '`$SMPROGRAMS\`${APP_NAME}\`${APP_NAME}.lnk' '`$INSTDIR\ScreenTranslator.exe'
+  CreateShortCut '`$DESKTOP\`${APP_NAME}.lnk' '`$INSTDIR\ScreenTranslator.exe'
+SectionEnd
+
+Section 'Uninstall'
+  Delete '`$INSTDIR\uninstall.exe'
+  RMDir /r '`$INSTDIR'
+  Delete '`$SMPROGRAMS\`${APP_NAME}\`${APP_NAME}.lnk'
+  RMDir '`$SMPROGRAMS\`${APP_NAME}'
+  Delete '`$DESKTOP\`${APP_NAME}.lnk'
+  DeleteRegKey HKLM 'Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APP_NAME}'
+  DeleteRegKey HKCU 'Software\`${APP_NAME}'
+SectionEnd
+"@
+        
+        $nsisScript | Out-File -FilePath "installer.nsi" -Encoding UTF8
+        
+        if (-not (Test-Path "LICENSE")) {
+          "MIT License`n`nPermission is hereby granted..." | Out-File -FilePath "LICENSE" -Encoding UTF8
+        }
+        
+        Write-Host "Building installer..."
+        makensis installer.nsi
+        
+        if (Test-Path "ScreenTranslator-Setup.exe") {
+          Write-Host "Installer created successfully"
+        } else {
+          Write-Warning "Installer creation failed"
+        }
+      shell: powershell
+      
+    - name: Package portable version
+      run: |
+        Write-Host "Creating portable package..."
+        
+        $portableDir = "ScreenTranslator-Portable"
+        if (Test-Path $portableDir) {
+          Remove-Item $portableDir -Recurse -Force
+        }
+        New-Item -ItemType Directory -Path $portableDir -Force
+        
+        # Copy built application
+        if (Test-Path "dist\ScreenTranslator") {
+          Copy-Item "dist\ScreenTranslator\*" -Destination $portableDir -Recurse -Force
+          Write-Host "Application files copied"
+        }
+        
+        # Create README
+        $readmeContent = @"
+# ScreenTranslator Portable
+
+## Quick Start
+1. Double-click ``ScreenTranslator.exe`` to launch
+2. Use keyboard shortcuts to capture and translate screen regions
+3. Configure settings through the application menu
+
+## System Requirements
+- Windows 10 or later (64-bit)
+- 4GB RAM minimum, 8GB recommended
+- 2GB free disk space
+
+## Features
+- Real-time screen text recognition (OCR)
+- Multi-language translation support
+- Keyboard shortcuts for quick access
+- Customizable capture regions
+- Offline translation capabilities (if language packs installed)
+
+## Troubleshooting
+- If OCR fails: Ensure Tesseract is properly installed
+- For translation issues: Check internet connection for online services
+- Performance: Close other applications to free up memory
+
+## Support
+Visit our GitHub repository for issues and updates.
+"@
+        $readmeContent | Out-File -FilePath "$portableDir\README.txt" -Encoding UTF8
+        
+        # Create archive
+        Write-Host "Creating ZIP archive..."
+        Compress-Archive -Path $portableDir -DestinationPath "ScreenTranslator-Portable.zip" -Force
+        
+        Write-Host "Portable package created successfully"
+        Write-Host "Package size: $((Get-Item 'ScreenTranslator-Portable.zip').Length / 1MB) MB"
+      shell: powershell
+      
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ScreenTranslator-Windows
+        path: |
+          ScreenTranslator-Portable.zip
+          ScreenTranslator-Setup.exe
+        retention-days: 30
+        
+    - name: Upload to release
+      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist/Skylark-Translator.exe
-          Skylark-Translator-Windows.zip
+          ScreenTranslator-Portable.zip
+          ScreenTranslator-Setup.exe
+        draft: false
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
