@@ -237,57 +237,48 @@ jobs:
       
     - name: Create Windows launcher
       run: |
-        $launcher = 'import os
-import sys
-import logging
-import traceback
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def setup_windows_environment():
-    app_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    tesseract_paths = [
-        r"C:\\Program Files\\Tesseract-OCR",
-        r"C:\\Program Files (x86)\\Tesseract-OCR"
-    ]
-    
-    for path in tesseract_paths:
-        tesseract_exe = os.path.join(path, "tesseract.exe")
-        if os.path.exists(tesseract_exe):
-            os.environ["PATH"] = path + os.pathsep + os.environ.get("PATH", "")
-            logger.info(f"Added Tesseract path: {path}")
-            break
-    else:
-        logger.warning("Tesseract not found in standard locations")
-    
-    os.environ["QT_QPA_PLATFORM"] = "windows"
-    os.environ["QT_SCALE_FACTOR"] = "1"
-    
-    logger.info("Windows environment configured")
-
-def main():
-    try:
-        setup_windows_environment()
-        from main import main as app_main
-        app_main()
-    except ImportError as e:
-        logger.error(f"Import error: {e}")
-        print("Error: Main application module not found")
-        input("Press Enter to exit...")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Application error: {e}")
-        logger.error(traceback.format_exc())
-        print(f"Error: {e}")
-        input("Press Enter to exit...")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()'
-        
-        $launcher | Out-File -FilePath "launcher_windows.py" -Encoding UTF8
+        echo 'import os' > launcher_windows.py
+        echo 'import sys' >> launcher_windows.py
+        echo 'import logging' >> launcher_windows.py
+        echo 'import traceback' >> launcher_windows.py
+        echo '' >> launcher_windows.py
+        echo 'logging.basicConfig(level=logging.INFO)' >> launcher_windows.py
+        echo 'logger = logging.getLogger(__name__)' >> launcher_windows.py
+        echo '' >> launcher_windows.py
+        echo 'def setup_windows_environment():' >> launcher_windows.py
+        echo '    app_dir = os.path.dirname(os.path.abspath(__file__))' >> launcher_windows.py
+        echo '    tesseract_paths = [r"C:\\Program Files\\Tesseract-OCR", r"C:\\Program Files (x86)\\Tesseract-OCR"]' >> launcher_windows.py
+        echo '    for path in tesseract_paths:' >> launcher_windows.py
+        echo '        tesseract_exe = os.path.join(path, "tesseract.exe")' >> launcher_windows.py
+        echo '        if os.path.exists(tesseract_exe):' >> launcher_windows.py
+        echo '            os.environ["PATH"] = path + os.pathsep + os.environ.get("PATH", "")' >> launcher_windows.py
+        echo '            logger.info(f"Added Tesseract path: {path}")' >> launcher_windows.py
+        echo '            break' >> launcher_windows.py
+        echo '    else:' >> launcher_windows.py
+        echo '        logger.warning("Tesseract not found in standard locations")' >> launcher_windows.py
+        echo '    os.environ["QT_QPA_PLATFORM"] = "windows"' >> launcher_windows.py
+        echo '    os.environ["QT_SCALE_FACTOR"] = "1"' >> launcher_windows.py
+        echo '    logger.info("Windows environment configured")' >> launcher_windows.py
+        echo '' >> launcher_windows.py
+        echo 'def main():' >> launcher_windows.py
+        echo '    try:' >> launcher_windows.py
+        echo '        setup_windows_environment()' >> launcher_windows.py
+        echo '        from main import main as app_main' >> launcher_windows.py
+        echo '        app_main()' >> launcher_windows.py
+        echo '    except ImportError as e:' >> launcher_windows.py
+        echo '        logger.error(f"Import error: {e}")' >> launcher_windows.py
+        echo '        print("Error: Main application module not found")' >> launcher_windows.py
+        echo '        input("Press Enter to exit...")' >> launcher_windows.py
+        echo '        sys.exit(1)' >> launcher_windows.py
+        echo '    except Exception as e:' >> launcher_windows.py
+        echo '        logger.error(f"Application error: {e}")' >> launcher_windows.py
+        echo '        logger.error(traceback.format_exc())' >> launcher_windows.py
+        echo '        print(f"Error: {e}")' >> launcher_windows.py
+        echo '        input("Press Enter to exit...")' >> launcher_windows.py
+        echo '        sys.exit(1)' >> launcher_windows.py
+        echo '' >> launcher_windows.py
+        echo 'if __name__ == "__main__":' >> launcher_windows.py
+        echo '    main()' >> launcher_windows.py
         Write-Host "Windows launcher created successfully"
       shell: powershell
       
@@ -296,83 +287,34 @@ if __name__ == "__main__":
         .\venv\Scripts\Activate.ps1
         
         Write-Host "Creating PyInstaller spec file..."
-        $spec = '# -*- mode: python ; coding: utf-8 -*-
-import os
-import sys
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
-
-block_cipher = None
-
-datas = []
-hiddenimports = []
-
-try:
-    import argostranslate
-    argos_datas = collect_data_files("argostranslate")
-    datas.extend(argos_datas)
-    argos_imports = collect_submodules("argostranslate")
-    hiddenimports.extend(argos_imports)
-    print(f"Added {len(argos_datas)} argostranslate data files")
-except ImportError:
-    print("ArgosTranslate not available for packaging")
-
-hiddenimports.extend([
-    "PIL._tkinter_finder",
-    "pkg_resources.py2_warn",
-    "packaging.version",
-    "packaging.specifiers", 
-    "packaging.requirements",
-])
-
-a = Analysis(
-    ["launcher_windows.py"],
-    pathex=["."],
-    binaries=[],
-    datas=datas,
-    hiddenimports=hiddenimports,
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "scipy"],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
-)
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name="ScreenTranslator",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon="icon.ico" if os.path.exists("icon.ico") else None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name="ScreenTranslator",
-)'
-        
-        $spec | Out-File -FilePath "build.spec" -Encoding UTF8
+        echo '# -*- mode: python ; coding: utf-8 -*-' > build.spec
+        echo 'import os' >> build.spec
+        echo 'import sys' >> build.spec
+        echo 'from PyInstaller.utils.hooks import collect_data_files, collect_submodules' >> build.spec
+        echo '' >> build.spec
+        echo 'block_cipher = None' >> build.spec
+        echo 'datas = []' >> build.spec
+        echo 'hiddenimports = []' >> build.spec
+        echo '' >> build.spec
+        echo 'try:' >> build.spec
+        echo '    import argostranslate' >> build.spec
+        echo '    argos_datas = collect_data_files("argostranslate")' >> build.spec
+        echo '    datas.extend(argos_datas)' >> build.spec
+        echo '    argos_imports = collect_submodules("argostranslate")' >> build.spec
+        echo '    hiddenimports.extend(argos_imports)' >> build.spec
+        echo '    print(f"Added {len(argos_datas)} argostranslate data files")' >> build.spec
+        echo 'except ImportError:' >> build.spec
+        echo '    print("ArgosTranslate not available for packaging")' >> build.spec
+        echo '' >> build.spec
+        echo 'hiddenimports.extend(["PIL._tkinter_finder", "pkg_resources.py2_warn", "packaging.version", "packaging.specifiers", "packaging.requirements"])' >> build.spec
+        echo '' >> build.spec
+        echo 'a = Analysis(["launcher_windows.py"], pathex=["."], binaries=[], datas=datas, hiddenimports=hiddenimports, hookspath=[], hooksconfig={}, runtime_hooks=[], excludes=["tkinter", "matplotlib", "scipy"], win_no_prefer_redirects=False, win_private_assemblies=False, cipher=block_cipher, noarchive=False)' >> build.spec
+        echo '' >> build.spec
+        echo 'pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)' >> build.spec
+        echo '' >> build.spec
+        echo 'exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="ScreenTranslator", debug=False, bootloader_ignore_signals=False, strip=False, upx=True, console=False, disable_windowed_traceback=False, argv_emulation=False, target_arch=None, codesign_identity=None, entitlements_file=None, icon="icon.ico" if os.path.exists("icon.ico") else None)' >> build.spec
+        echo '' >> build.spec
+        echo 'coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, strip=False, upx=True, upx_exclude=[], name="ScreenTranslator")' >> build.spec
         
         Write-Host "Building application with PyInstaller..."
         pyinstaller build.spec --noconfirm --clean
@@ -394,61 +336,56 @@ coll = COLLECT(
         choco install nsis -y
         
         Write-Host "Creating installer script..."
-        $nsis = '!define APP_NAME "ScreenTranslator"
-!define APP_VERSION "1.0.0"
-!define APP_PUBLISHER "ScreenTranslator Team"
-!define APP_URL "https://github.com/yourusername/screentranslator"
-
-!include "MUI2.nsh"
-
-Name "${APP_NAME} ${APP_VERSION}"
-OutFile "ScreenTranslator-Setup.exe"
-InstallDir "$PROGRAMFILES64\${APP_NAME}"
-InstallDirRegKey HKCU "Software\${APP_NAME}" ""
-RequestExecutionLevel admin
-
-!define MUI_ABORTWARNING
-!insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_LICENSE "LICENSE"
-!insertmacro MUI_PAGE_DIRECTORY
-!insertmacro MUI_PAGE_INSTFILES
-!insertmacro MUI_PAGE_FINISH
-
-!insertmacro MUI_UNPAGE_WELCOME
-!insertmacro MUI_UNPAGE_CONFIRM
-!insertmacro MUI_UNPAGE_INSTFILES
-
-!insertmacro MUI_LANGUAGE "English"
-
-Section "MainSection" SEC01
-  SetOutPath "$INSTDIR"
-  SetOverwrite ifnewer
-  
-  File /r "dist\ScreenTranslator\*"
-  
-  WriteRegStr HKCU "Software\${APP_NAME}" "" $INSTDIR
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "DisplayName" "${APP_NAME}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "UninstallString" "$INSTDIR\uninstall.exe"
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "NoModify" 1
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "NoRepair" 1
-  WriteUninstaller "$INSTDIR\uninstall.exe"
-  
-  CreateDirectory "$SMPROGRAMS\${APP_NAME}"
-  CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\ScreenTranslator.exe"
-  CreateShortCut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\ScreenTranslator.exe"
-SectionEnd
-
-Section "Uninstall"
-  Delete "$INSTDIR\uninstall.exe"
-  RMDir /r "$INSTDIR"
-  Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"
-  RMDir "$SMPROGRAMS\${APP_NAME}"
-  Delete "$DESKTOP\${APP_NAME}.lnk"
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
-  DeleteRegKey HKCU "Software\${APP_NAME}"
-SectionEnd'
-        
-        $nsis | Out-File -FilePath "installer.nsi" -Encoding UTF8
+        echo '!define APP_NAME "ScreenTranslator"' > installer.nsi
+        echo '!define APP_VERSION "1.0.0"' >> installer.nsi
+        echo '!define APP_PUBLISHER "ScreenTranslator Team"' >> installer.nsi
+        echo '!define APP_URL "https://github.com/yourusername/screentranslator"' >> installer.nsi
+        echo '' >> installer.nsi
+        echo '!include "MUI2.nsh"' >> installer.nsi
+        echo '' >> installer.nsi
+        echo 'Name "${APP_NAME} ${APP_VERSION}"' >> installer.nsi
+        echo 'OutFile "ScreenTranslator-Setup.exe"' >> installer.nsi
+        echo 'InstallDir "$PROGRAMFILES64\${APP_NAME}"' >> installer.nsi
+        echo 'InstallDirRegKey HKCU "Software\${APP_NAME}" ""' >> installer.nsi
+        echo 'RequestExecutionLevel admin' >> installer.nsi
+        echo '' >> installer.nsi
+        echo '!define MUI_ABORTWARNING' >> installer.nsi
+        echo '!insertmacro MUI_PAGE_WELCOME' >> installer.nsi
+        echo '!insertmacro MUI_PAGE_LICENSE "LICENSE"' >> installer.nsi
+        echo '!insertmacro MUI_PAGE_DIRECTORY' >> installer.nsi
+        echo '!insertmacro MUI_PAGE_INSTFILES' >> installer.nsi
+        echo '!insertmacro MUI_PAGE_FINISH' >> installer.nsi
+        echo '' >> installer.nsi
+        echo '!insertmacro MUI_UNPAGE_WELCOME' >> installer.nsi
+        echo '!insertmacro MUI_UNPAGE_CONFIRM' >> installer.nsi
+        echo '!insertmacro MUI_UNPAGE_INSTFILES' >> installer.nsi
+        echo '' >> installer.nsi
+        echo '!insertmacro MUI_LANGUAGE "English"' >> installer.nsi
+        echo '' >> installer.nsi
+        echo 'Section "MainSection" SEC01' >> installer.nsi
+        echo '  SetOutPath "$INSTDIR"' >> installer.nsi
+        echo '  SetOverwrite ifnewer' >> installer.nsi
+        echo '  File /r "dist\ScreenTranslator\*"' >> installer.nsi
+        echo '  WriteRegStr HKCU "Software\${APP_NAME}" "" $INSTDIR' >> installer.nsi
+        echo '  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "DisplayName" "${APP_NAME}"' >> installer.nsi
+        echo '  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "UninstallString" "$INSTDIR\uninstall.exe"' >> installer.nsi
+        echo '  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "NoModify" 1' >> installer.nsi
+        echo '  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "NoRepair" 1' >> installer.nsi
+        echo '  WriteUninstaller "$INSTDIR\uninstall.exe"' >> installer.nsi
+        echo '  CreateDirectory "$SMPROGRAMS\${APP_NAME}"' >> installer.nsi
+        echo '  CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\ScreenTranslator.exe"' >> installer.nsi
+        echo '  CreateShortCut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\ScreenTranslator.exe"' >> installer.nsi
+        echo 'SectionEnd' >> installer.nsi
+        echo '' >> installer.nsi
+        echo 'Section "Uninstall"' >> installer.nsi
+        echo '  Delete "$INSTDIR\uninstall.exe"' >> installer.nsi
+        echo '  RMDir /r "$INSTDIR"' >> installer.nsi
+        echo '  Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"' >> installer.nsi
+        echo '  RMDir "$SMPROGRAMS\${APP_NAME}"' >> installer.nsi
+        echo '  Delete "$DESKTOP\${APP_NAME}.lnk"' >> installer.nsi
+        echo '  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"' >> installer.nsi
+        echo '  DeleteRegKey HKCU "Software\${APP_NAME}"' >> installer.nsi
+        echo 'SectionEnd' >> installer.nsi
         
         if (-not (Test-Path "LICENSE")) {
           "MIT License`n`nPermission is hereby granted..." | Out-File -FilePath "LICENSE" -Encoding UTF8
@@ -479,34 +416,32 @@ SectionEnd'
           Write-Host "Application files copied"
         }
         
-        $readme = '# ScreenTranslator Portable
-
-## Quick Start
-1. Double-click ScreenTranslator.exe to launch
-2. Use keyboard shortcuts to capture and translate screen regions
-3. Configure settings through the application menu
-
-## System Requirements
-- Windows 10 or later (64-bit)
-- 4GB RAM minimum, 8GB recommended
-- 2GB free disk space
-
-## Features
-- Real-time screen text recognition (OCR)
-- Multi-language translation support
-- Keyboard shortcuts for quick access
-- Customizable capture regions
-- Offline translation capabilities (if language packs installed)
-
-## Troubleshooting
-- If OCR fails: Ensure Tesseract is properly installed
-- For translation issues: Check internet connection for online services
-- Performance: Close other applications to free up memory
-
-## Support
-Visit our GitHub repository for issues and updates.'
-        
-        $readme | Out-File -FilePath "$portableDir\README.txt" -Encoding UTF8
+        echo '# ScreenTranslator Portable' > "$portableDir\README.txt"
+        echo '' >> "$portableDir\README.txt"
+        echo '## Quick Start' >> "$portableDir\README.txt"
+        echo '1. Double-click ScreenTranslator.exe to launch' >> "$portableDir\README.txt"
+        echo '2. Use keyboard shortcuts to capture and translate screen regions' >> "$portableDir\README.txt"
+        echo '3. Configure settings through the application menu' >> "$portableDir\README.txt"
+        echo '' >> "$portableDir\README.txt"
+        echo '## System Requirements' >> "$portableDir\README.txt"
+        echo '- Windows 10 or later (64-bit)' >> "$portableDir\README.txt"
+        echo '- 4GB RAM minimum, 8GB recommended' >> "$portableDir\README.txt"
+        echo '- 2GB free disk space' >> "$portableDir\README.txt"
+        echo '' >> "$portableDir\README.txt"
+        echo '## Features' >> "$portableDir\README.txt"
+        echo '- Real-time screen text recognition (OCR)' >> "$portableDir\README.txt"
+        echo '- Multi-language translation support' >> "$portableDir\README.txt"
+        echo '- Keyboard shortcuts for quick access' >> "$portableDir\README.txt"
+        echo '- Customizable capture regions' >> "$portableDir\README.txt"
+        echo '- Offline translation capabilities (if language packs installed)' >> "$portableDir\README.txt"
+        echo '' >> "$portableDir\README.txt"
+        echo '## Troubleshooting' >> "$portableDir\README.txt"
+        echo '- If OCR fails: Ensure Tesseract is properly installed' >> "$portableDir\README.txt"
+        echo '- For translation issues: Check internet connection for online services' >> "$portableDir\README.txt"
+        echo '- Performance: Close other applications to free up memory' >> "$portableDir\README.txt"
+        echo '' >> "$portableDir\README.txt"
+        echo '## Support' >> "$portableDir\README.txt"
+        echo 'Visit our GitHub repository for issues and updates.' >> "$portableDir\README.txt"
         
         Write-Host "Creating ZIP archive..."
         Compress-Archive -Path $portableDir -DestinationPath "ScreenTranslator-Portable.zip" -Force
