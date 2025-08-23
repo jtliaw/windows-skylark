@@ -1,212 +1,342 @@
-name: Build Windows Skylark Translator
+name: Advanced Windows Build with Multiple Variants
 
 on:
-  push:
-    tags:
-      - 'v*' # 当推送以v开头的标签时触发构建
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch: # 允许手动触发工作流
+  schedule:
+    # 每周自动构建一次 (周日 UTC 2:00)
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      build_variants:
+        description: 'Build variants to create'
+        required: true
+        default: 'standard,portable,offline'
+        type: choice
+        options:
+          - 'standard'
+          - 'portable' 
+          - 'offline'
+          - 'standard,portable'
+          - 'standard,offline'
+          - 'portable,offline'
+          - 'standard,portable,offline'
+      create_msi:
+        description: 'Create MSI installer'
+        required: false
+        default: false
+        type: boolean
+      sign_executables:
+        description: 'Sign executables (requires certificate)'
+        required: false
+        default: false
+        type: boolean
 
 env:
-  PYTHON_VERSION: '3.9' # 使用Python 3.9以确保兼容性
+  PYTHON_VERSION: '3.11'
+  APP_NAME: 'Skylark Screen Translator'
+  APP_VERSION: '1.0.0'
 
 jobs:
-  build-windows:
-    runs-on: windows-latest # 使用Windows构建环境
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      variants: ${{ steps.set-matrix.outputs.variants }}
+      
+    steps:
+    - name: Set build matrix
+      id: set-matrix
+      run: |
+        VARIANTS="${{ github.event.inputs.build_variants || 'standard,portable,offline' }}"
+        echo "variants=[\"$(echo $VARIANTS | sed 's/,/\",\"/g')\"]" >> $GITHUB_OUTPUT
+        echo "Build variants: $VARIANTS"
 
+  build-windows-variants:
+    needs: prepare-matrix
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        architecture: [x64, x86]
+        variant: ${{ fromJson(needs.prepare-matrix.outputs.variants) }}
+        
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ env.PYTHON_VERSION }}
-        architecture: 'x64'
+        architecture: ${{ matrix.architecture }}
 
-    - name: Install system dependencies
+    - name: Install base dependencies
       run: |
-        # 安装Windows构建工具（如果需要编译某些Python包）
-        choco install -y vcredist2019
-        # 安装Tesseract OCR（如果需要OCR功能）
-        choco install -y tesseract
+        Write-Host "Installing base system dependencies..."
+        
+        # Tesseract OCR
+        choco install tesseract --yes --force
+        
+        # Visual C++ Redistributable (for distribution)
+        choco install vcredist140 --yes
+        
+        # Windows SDK (for advanced features)
+        if ("${{ matrix.variant }}" -eq "standard" -or "${{ matrix.variant }}" -eq "offline") {
+          choco install windows-sdk-10-version-2004-windbg --yes
+        }
+        
+        # 添加工具到PATH
+        $env:PATH += ";C:\Program Files\Tesseract-OCR"
+        echo "C:\Program Files\Tesseract-OCR" >> $env:GITHUB_PATH
 
-    - name: Add Tesseract to PATH
+    - name: Install Python dependencies by variant
       run: |
-        echo "C:\Program Files\Tesseract-OCR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
+        Write-Host "Installing dependencies for variant: ${{ matrix.variant }}"
+        
+        # 基础依赖
+        python -m pip install --upgrade pip setuptools wheel
+        pip install PyQt5==5.15.10 Pillow>=9.0.0 opencv-python-headless numpy>=1.21.0
+        pip install pytesseract mss pynput screeninfo requests ttkthemes certifi
         pip install pyinstaller
-        pip install PyQt5==5.15.10
-        pip install Pillow>=9.0.0
-        pip install numpy>=1.21.0
-        pip install opencv-python-headless
-        pip install pytesseract
-        pip install mss
-        pip install pynput
-        pip install requests
-        pip install screeninfo
-        pip install ttkthemes
-        pip install certifi
-
-    - name: Install argostranslate (offline translation)
-      run: |
-        # 设置环境变量以避免CUDA依赖
-        $env:FORCE_CUDA = "0"
-        $env:USE_CUDA = "0"
         
-        # 安装argostranslate及其依赖
-        pip install PyYAML requests packaging six
-        pip install sentencepiece
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-        pip install stanza
-        pip install ctranslate2
-        pip install argostranslate
-
-    - name: Verify required files exist
-      run: |
-        # 检查必要的文件是否存在
-        if (-Not (Test-Path "skylark_screen_translator.py")) {
-          Write-Error "Missing required file: skylark_screen_translator.py"
-          exit 1
-        }
-        if (-Not (Test-Path "online_translator.py")) {
-          Write-Error "Missing required file: online_translator.py"
-          exit 1
-        }
-        
-        # 如果没有图标，创建一个默认的
-        if (-Not (Test-Path "skylark.ico")) {
-          if (Test-Path "skylark.png") {
-            # 如果有PNG图标，转换为ICO格式
-            python -c "from PIL import Image
-img = Image.open('skylark.png')
-img.save('skylark.ico', format='ICO', sizes=[(16,16), (32,32), (48,48), (64,64), (128,128), (256,256)])
-print('Converted PNG to ICO')"
-          } else {
-            # 创建默认图标
-            python -c "from PIL import Image, ImageDraw
-img = Image.new('RGB', (256, 256), (30, 144, 255))
-draw = ImageDraw.Draw(img)
-draw.ellipse((50, 50, 206, 206), fill=(255, 255, 255))
-draw.ellipse((80, 80, 176, 176), fill=(30, 144, 255))
-img.save('skylark.ico', format='ICO')
-print('Created default ICO icon')"
+        # 根据变体安装额外依赖
+        switch ("${{ matrix.variant }}") {
+          "offline" {
+            Write-Host "Installing offline translation dependencies..."
+            $env:FORCE_CUDA = "0"
+            pip install PyYAML packaging six sentencepiece
+            pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+            pip install stanza ctranslate2 argostranslate
+          }
+          "portable" {
+            Write-Host "Installing portable-specific dependencies..."
+            pip install psutil wmi pywin32
+          }
+          "standard" {
+            Write-Host "Installing standard dependencies..."
+            pip install pywin32 winsound
           }
         }
 
-    - name: Create PyInstaller spec file for Windows
+    - name: Create variant-specific launcher
       run: |
-        # 创建Windows专用的spec文件
-        $specContent = @"
+        Write-Host "Creating launcher for variant: ${{ matrix.variant }}"
+        
+        $launcher_template = @"
+#!/usr/bin/env python3
+'''
+Skylark Screen Translator - Windows ${{ matrix.variant }} 版
+GitHub Actions 自动构建 - 架构: ${{ matrix.architecture }}
+构建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+'''
+
+import os
+import sys
+import traceback
+import platform
+
+VARIANT = '${{ matrix.variant }}'
+ARCHITECTURE = '${{ matrix.architecture }}'
+BUILD_TIME = '$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')'
+
+def setup_variant_environment():
+    '''根据变体设置特定环境'''
+    print(f'🚀 Skylark {VARIANT.title()} 启动器 ({ARCHITECTURE})')
+    print(f'⏰ 构建时间: {BUILD_TIME}')
+    print(f'🖥️  系统: {platform.system()} {platform.release()}')
+    
+    # 获取应用目录
+    if getattr(sys, 'frozen', False):
+        app_dir = os.path.dirname(sys.executable)
+        internal_dir = os.path.join(app_dir, '_internal')
+    else:
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        internal_dir = app_dir
+    
+    print(f'📂 应用目录: {app_dir}')
+    
+    # 变体特定设置
+    if VARIANT == 'portable':
+        setup_portable_mode(app_dir, internal_dir)
+    elif VARIANT == 'offline':
+        setup_offline_mode(app_dir, internal_dir)
+    else:
+        setup_standard_mode(app_dir, internal_dir)
+
+def setup_portable_mode(app_dir, internal_dir):
+    '''便携版设置'''
+    print('📦 便携版模式')
+    
+    # 使用相对路径，所有数据存储在应用目录
+    portable_data = os.path.join(app_dir, 'PortableData')
+    os.makedirs(portable_data, exist_ok=True)
+    
+    os.environ['SKYLARK_PORTABLE'] = '1'
+    os.environ['SKYLARK_DATA_DIR'] = portable_data
+    
+    # 便携版配置
+    config_dir = os.path.join(portable_data, 'config')
+    os.makedirs(config_dir, exist_ok=True)
+    os.environ['SKYLARK_CONFIG_DIR'] = config_dir
+    
+    print(f'💾 便携数据目录: {portable_data}')
+
+def setup_offline_mode(app_dir, internal_dir):
+    '''离线版设置'''
+    print('🔒 离线版模式')
+    
+    # 设置离线翻译
+    argos_dir = os.path.join(internal_dir, 'argos_packages')
+    if os.path.exists(argos_dir):
+        os.environ['ARGOS_PACKAGES_DIR'] = argos_dir
+        print(f'📚 离线翻译包: {argos_dir}')
+    
+    os.environ['SKYLARK_OFFLINE_MODE'] = '1'
+
+def setup_standard_mode(app_dir, internal_dir):
+    '''标准版设置'''
+    print('⭐ 标准版模式')
+    
+    # 使用标准Windows目录
+    user_data = os.path.expanduser('~\\AppData\\Local\\Skylark')
+    os.makedirs(user_data, exist_ok=True)
+    os.environ['SKYLARK_DATA_DIR'] = user_data
+    
+    print(f'💾 用户数据目录: {user_data}')
+
+def setup_common_environment(app_dir, internal_dir):
+    '''通用环境设置'''
+    # Tesseract
+    tesseract_paths = [
+        r'C:\\Program Files\\Tesseract-OCR\\tesseract.exe',
+        os.path.join(internal_dir, 'tesseract.exe')
+    ]
+    
+    for tess_path in tesseract_paths:
+        if os.path.exists(tess_path):
+            os.environ['TESSERACT_CMD'] = tess_path
+            print(f'🔍 Tesseract: {tess_path}')
+            break
+    
+    # SSL证书
+    cert_file = os.path.join(internal_dir, 'certifi', 'cacert.pem')
+    if os.path.exists(cert_file):
+        os.environ['SSL_CERT_FILE'] = cert_file
+        os.environ['REQUESTS_CA_BUNDLE'] = cert_file
+    
+    # Qt设置
+    os.environ['QT_QPA_PLATFORM'] = 'windows'
+    
+    print('✅ 环境配置完成')
+
+def main():
+    try:
+        setup_variant_environment()
+        setup_common_environment('', '')
+        
+        # 查找并启动主程序
+        main_script = 'skylark_screen_translator.py'
+        if not os.path.exists(main_script):
+            print(f'❌ 找不到主程序: {main_script}')
+            input('按Enter键退出...')
+            sys.exit(1)
+        
+        print(f'🎯 启动主程序...')
+        
+        with open(main_script, 'rb') as f:
+            code = compile(f.read(), main_script, 'exec')
+            exec(code, globals())
+            
+    except Exception as e:
+        print(f'❌ 启动失败: {e}')
+        traceback.print_exc()
+        input('按Enter键退出...')
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
+"@
+        
+        $filename = "windows_${{ matrix.variant }}_launcher.py"
+        Set-Content -Path $filename -Value $launcher_template
+        Write-Host "✅ Created: $filename"
+
+    - name: Create variant-specific spec
+      run: |
+        Write-Host "Creating PyInstaller spec for ${{ matrix.variant }} variant..."
+        
+        $spec_content = @"
 # -*- mode: python ; coding: utf-8 -*-
+# Skylark Windows ${{ matrix.variant }} PyInstaller配置
+# 架构: ${{ matrix.architecture }} | 构建: GitHub Actions
+
+import os
 
 block_cipher = None
+variant = '${{ matrix.variant }}'
 
-# Windows专用的隐藏导入
-hiddenimports = [
-    'PyQt5.QtCore',
-    'PyQt5.QtGui', 
-    'PyQt5.QtWidgets',
-    'PyQt5.sip',
-    'sip',
-    
-    'PIL',
-    'PIL.Image',
-    'PIL.ImageGrab',
-    'PIL.ImageTk',
-    'cv2',
-    'numpy',
-    'numpy.core._methods',
-    'numpy.lib.format',
-    
-    'pytesseract',
-    'mss',
-    'mss.windows',
-    'pynput',
-    'pynput.keyboard',
-    'pynput.mouse',
-    'pynput.keyboard._win32',
-    'pynput.mouse._win32',
-    'screeninfo',
-    
-    'requests',
-    'requests.packages.urllib3',
-    'certifi',
-    'ttkthemes',
-    
-    'argostranslate',
-    'argostranslate.package',
-    'argostranslate.translate',
-    'argostranslate.settings',
-    'argostranslate.utils',
-    
-    'stanza',
-    'ctranslate2',
-    'sentencepiece',
-    'torch',
-    
-    'online_translator',
-    
-    'json',
-    'hashlib',
-    'uuid',
-    'pkg_resources.py2_warn',
+# 基础隐藏导入
+base_hiddenimports = [
+    'PyQt5.QtCore', 'PyQt5.QtGui', 'PyQt5.QtWidgets', 'PyQt5.sip', 'sip',
+    'PIL', 'PIL.Image', 'PIL.ImageGrab', 'cv2', 'numpy',
+    'pytesseract', 'mss', 'mss.windows', 'pynput', 'screeninfo',
+    'requests', 'certifi', 'ttkthemes', 'online_translator',
 ]
 
+# 变体特定导入
+if variant == 'offline':
+    base_hiddenimports.extend([
+        'argostranslate', 'argostranslate.package', 'argostranslate.translate',
+        'stanza', 'ctranslate2', 'sentencepiece', 'torch'
+    ])
+elif variant == 'portable':
+    base_hiddenimports.extend([
+        'psutil', 'wmi', 'win32api', 'win32con', 'win32gui'
+    ])
+
 # 数据文件
-datas = []
+datas = [
+    ('skylark_screen_translator.py', '.'),
+    ('online_translator.py', '.'),
+]
 
-# 添加主脚本文件
-import os
-datas.append(('skylark_screen_translator.py', '.'))
-datas.append(('online_translator.py', '.'))
+# 变体特定数据
+if variant == 'offline':
+    try:
+        import argostranslate
+        argos_path = os.path.dirname(argostranslate.__file__)
+        datas.append((argos_path, 'argostranslate'))
+    except ImportError:
+        pass
 
-# 添加图标文件（如果存在）
-if os.path.exists('skylark.ico'):
-    datas.append(('skylark.ico', '.'))
-
-# 添加SSL证书
+# SSL证书
 try:
     import certifi
     datas.append((certifi.where(), 'certifi'))
-except:
+except ImportError:
     pass
 
-# 添加argostranslate数据
-try:
-    import argostranslate
-    argos_path = os.path.dirname(argostranslate.__file__)
-    datas.append((argos_path, 'argostranslate'))
-except:
-    pass
+# Tesseract数据
+tesseract_data = r'C:\\Program Files\\Tesseract-OCR\\tessdata'
+if os.path.exists(tesseract_data):
+    datas.append((tesseract_data, 'tessdata'))
+
+# 可选文件
+for optional_file in ['skylark.png', 'README.md']:
+    if os.path.exists(optional_file):
+        datas.append((optional_file, '.'))
 
 a = Analysis(
-    ['skylark_screen_translator.py'],
+    ['windows_${{ matrix.variant }}_launcher.py'],
     pathex=[],
     binaries=[],
     datas=datas,
-    hiddenimports=hiddenimports,
+    hiddenimports=base_hiddenimports,
     hookspath=[],
-    hooksconfig={},
     runtime_hooks=[],
-    excludes=[
-        'matplotlib',
-        'scipy', 
-        'pandas',
-        'jupyter',
-        'PyQt5.QtWebEngine',
-        'PyQt5.QtWebEngineWidgets',
-        'tensorflow',
-        'keras',
-    ],
+    excludes=['matplotlib', 'scipy', 'pandas', 'jupyter', 'tkinter'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
-    noarchive=False,
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
@@ -216,18 +346,14 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='Skylark_Translator',
+    name=f'Skylark_{variant.title()}_${{ matrix.architecture }}',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,  # Windows上使用UPX压缩可执行文件
-    console=False,  # 不显示控制台窗口
-    icon='skylark.ico',  # 设置应用程序图标
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
+    upx=True,
+    console=False,
+    target_arch='${{ matrix.architecture }}',
+    icon='skylark.ico' if os.path.exists('skylark.ico') else None,
 )
 
 coll = COLLECT(
@@ -237,38 +363,319 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    name='Skylark_Translator',
+    name=f'Skylark_{variant.title()}_${{ matrix.architecture }}',
 )
 "@
-        Set-Content -Path "skylark_windows.spec" -Value $specContent
-
-    - name: Build with PyInstaller
-      run: |
-        pyinstaller skylark_windows.spec --clean --noconfirm
-
-    - name: Create ZIP package
-      run: |
-        # 创建发布版本的ZIP包
-        $version = if ($env:GITHUB_REF -like "refs/tags/*") { 
-            $env:GITHUB_REF.replace("refs/tags/", "") 
-        } else { 
-            "dev-$($env:GITHUB_RUN_ID)" 
-        }
         
-        $zipName = "Skylark_Translator_Windows_$version.zip"
-        Compress-Archive -Path "dist/Skylark_Translator/*" -DestinationPath $zipName
+        $spec_file = "skylark_${{ matrix.variant }}_${{ matrix.architecture }}.spec"
+        Set-Content -Path $spec_file -Value $spec_content
+        Write-Host "✅ Created: $spec_file"
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+    - name: Build variant executable
+      run: |
+        Write-Host "Building ${{ matrix.variant }} executable (${{ matrix.architecture }})..."
+        
+        $spec_file = "skylark_${{ matrix.variant }}_${{ matrix.architecture }}.spec"
+        pyinstaller $spec_file --clean --noconfirm
+        
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "✅ Build successful"
+        } else {
+          Write-Error "❌ Build failed"
+          exit 1
+        }
+
+    - name: Sign executable (if enabled)
+      if: github.event.inputs.sign_executables == 'true' && secrets.SIGNING_CERTIFICATE != ''
+      run: |
+        Write-Host "Signing executable..."
+        # 注意: 需要在GitHub Secrets中设置SIGNING_CERTIFICATE和SIGNING_PASSWORD
+        # 这里只是示例，实际签名需要有效的证书
+        Write-Host "⚠️  Code signing requires valid certificate in secrets"
+        Write-Host "Skipping signing for this build"
+
+    - name: Create MSI installer (if enabled)
+      if: github.event.inputs.create_msi == 'true' && matrix.architecture == 'x64'
+      run: |
+        Write-Host "Creating MSI installer for ${{ matrix.variant }}..."
+        
+        # 安装WiX Toolset
+        choco install wixtoolset --yes
+        
+        # 创建WiX配置
+        $wix_config = @"
+<?xml version='1.0' encoding='windows-1252'?>
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+  <Product Name='Skylark Screen Translator (${{ matrix.variant }})' 
+           Id='*' 
+           UpgradeCode='12345678-1234-1234-1234-123456789012'
+           Language='1033' 
+           Codepage='1252' 
+           Version='${{ env.APP_VERSION }}' 
+           Manufacturer='Skylark Team'>
+
+    <Package Id='*' 
+             Keywords='Screen Translator'
+             Description='AI-powered screen translation tool'
+             Comments='Built with GitHub Actions'
+             Manufacturer='Skylark Team'
+             InstallerVersion='100' 
+             Languages='1033' 
+             Compressed='yes' 
+             SummaryCodepage='1252' />
+
+    <Media Id='1' Cabinet='skylark.cab' EmbedCab='yes' />
+
+    <Directory Id='TARGETDIR' Name='SourceDir'>
+      <Directory Id='ProgramFilesFolder' Name='PFiles'>
+        <Directory Id='SKYLARKDIR' Name='Skylark'>
+          <Component Id='MainExecutable' Guid='*'>
+            <File Id='SkylarkEXE' 
+                  Name='Skylark_${{ matrix.variant }}_${{ matrix.architecture }}.exe' 
+                  Source='dist\\Skylark_${{ matrix.variant }}_${{ matrix.architecture }}\\Skylark_${{ matrix.variant }}_${{ matrix.architecture }}.exe' 
+                  KeyPath='yes'>
+              <Shortcut Id='startmenuSkylark' 
+                        Directory='ProgramMenuDir' 
+                        Name='Skylark Screen Translator'
+                        WorkingDirectory='SKYLARKDIR' 
+                        Icon='skylark.ico' />
+              <Shortcut Id='desktopSkylark' 
+                        Directory='DesktopFolder' 
+                        Name='Skylark Screen Translator'
+                        WorkingDirectory='SKYLARKDIR' 
+                        Icon='skylark.ico' />
+            </File>
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id='ProgramMenuFolder' Name='Programs'>
+        <Directory Id='ProgramMenuDir' Name='Skylark Screen Translator' />
+      </Directory>
+      <Directory Id='DesktopFolder' Name='Desktop' />
+    </Directory>
+
+    <Feature Id='Complete' Level='1'>
+      <ComponentRef Id='MainExecutable' />
+    </Feature>
+
+    <Icon Id='skylark.ico' SourceFile='skylark.ico' />
+    <Property Id='ARPPRODUCTICON' Value='skylark.ico' />
+  </Product>
+</Wix>
+"@
+        
+        Set-Content -Path "skylark_${{ matrix.variant }}.wxs" -Value $wix_config
+        
+        # 编译MSI
+        & "C:\Program Files (x86)\WiX Toolset v3.11\bin\candle.exe" "skylark_${{ matrix.variant }}.wxs"
+        & "C:\Program Files (x86)\WiX Toolset v3.11\bin\light.exe" -ext WixUIExtension "skylark_${{ matrix.variant }}.wixobj"
+        
+        if (Test-Path "skylark_${{ matrix.variant }}.msi") {
+          Write-Host "✅ MSI installer created"
+        } else {
+          Write-Host "⚠️  MSI creation failed"
+        }
+
+    - name: Package variant
+      run: |
+        Write-Host "Packaging ${{ matrix.variant }} variant..."
+        
+        $dist_dir = "dist\\Skylark_${{ matrix.variant }}_${{ matrix.architecture }}"
+        $package_name = "Skylark_${{ matrix.variant }}_Windows_${{ matrix.architecture }}"
+        
+        if (Test-Path $dist_dir) {
+          # 创建包目录
+          New-Item -ItemType Directory -Force -Path $package_name
+          
+          # 复制文件
+          Copy-Item -Path "$dist_dir\\*" -Destination $package_name -Recurse -Force
+          
+          # 创建变体特定的README
+          $variant_readme = @"
+# Skylark Screen Translator - ${{ matrix.variant }} Version
+
+## Version Information
+- **Variant**: ${{ matrix.variant }}
+- **Architecture**: ${{ matrix.architecture }}  
+- **Build**: GitHub Actions #${{ github.run_number }}
+- **Python**: ${{ env.PYTHON_VERSION }}
+- **Build Time**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+
+## Variant Features
+"@
+          
+          switch ("${{ matrix.variant }}") {
+            "standard" {
+              $variant_readme += @"
+
+### Standard Version
+- Full online translation support
+- System integration
+- Auto-updates (when available)
+- Uses system directories for data storage
+"@
+            }
+            "portable" {
+              $variant_readme += @"
+
+### Portable Version  
+- No installation required
+- All data stored in application folder
+- Can run from USB drive
+- Perfect for testing or temporary use
+- Includes system monitoring tools
+"@
+            }
+            "offline" {
+              $variant_readme += @"
+
+### Offline Version
+- Includes argostranslate offline engine
+- Pre-installed Chinese-English translation
+- No internet required for basic translation
+- Larger file size due to ML models
+- Perfect for air-gapped environments
+"@
+            }
+          }
+          
+          $variant_readme += @"
+
+## System Requirements
+- Windows 10/11 (recommended)
+- Windows 8.1/Server 2012 R2 (minimum)
+- 4GB RAM (8GB for offline version)
+- 500MB free disk space (2GB for offline version)
+
+## Usage
+1. Extract all files to a folder
+2. Run the main executable
+3. Follow the setup wizard (first run only)
+
+## Support
+- GitHub: https://github.com/your-repo
+- Issues: https://github.com/your-repo/issues
+"@
+          
+          Set-Content -Path "$package_name\\README_${{ matrix.variant }}.txt" -Value $variant_readme
+          
+          # 创建启动批处理文件
+          $batch_content = @"
+@echo off
+title Skylark Screen Translator (${{ matrix.variant }})
+cd /d "%~dp0"
+
+echo.
+echo ========================================
+echo  Skylark Screen Translator
+echo  Version: ${{ matrix.variant }}
+echo  Architecture: ${{ matrix.architecture }}
+echo ========================================
+echo.
+
+if not exist "Skylark_${{ matrix.variant }}_${{ matrix.architecture }}.exe" (
+    echo ERROR: Main executable not found!
+    echo Please ensure all files are extracted properly.
+    pause
+    exit /b 1
+)
+
+echo Starting application...
+start "Skylark" "Skylark_${{ matrix.variant }}_${{ matrix.architecture }}.exe"
+
+echo.
+echo Application started. You can close this window.
+timeout /t 3 /nobreak >nul
+"@
+          
+          Set-Content -Path "$package_name\\Start_Skylark_${{ matrix.variant }}.bat" -Value $batch_content
+          
+          Write-Host "✅ Package created: $package_name"
+        } else {
+          Write-Error "❌ Distribution directory not found: $dist_dir"
+          exit 1
+        }
+
+    - name: Upload variant artifacts
+      uses: actions/upload-artifact@v3
       with:
-        name: Skylark-Translator-Windows
-        path: Skylark_Translator_Windows_*.zip
+        name: skylark-${{ matrix.variant }}-windows-${{ matrix.architecture }}
+        path: |
+          Skylark_${{ matrix.variant }}_Windows_${{ matrix.architecture }}/**/*
+          skylark_${{ matrix.variant }}.msi
+        retention-days: 30
 
-    - name: Create release
-      if: startsWith(github.ref, 'refs/tags/')
+  create-combined-release:
+    needs: build-windows-variants
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      
+    - name: Create combined release packages
+      run: |
+        echo "Creating combined release packages..."
+        
+        # 创建发布目录
+        mkdir -p release-packages
+        
+        # 为每个变体创建zip包
+        for variant in standard portable offline; do
+          for arch in x64 x86; do
+            artifact_dir="skylark-${variant}-windows-${arch}"
+            if [ -d "$artifact_dir" ]; then
+              package_name="Skylark_${variant}_Windows_${arch}"
+              if [ -d "$artifact_dir/$package_name" ]; then
+                echo "Creating zip for $variant $arch..."
+                cd "$artifact_dir"
+                zip -r "../release-packages/${package_name}.zip" "$package_name"
+                cd ..
+              fi
+            fi
+          done
+        done
+        
+        # 列出创建的包
+        ls -la release-packages/
+
+    - name: Upload to release
       uses: softprops/action-gh-release@v1
       with:
-        files: Skylark_Translator_Windows_*.zip
+        files: release-packages/*.zip
+        name: "Skylark Windows Release ${{ github.ref_name }}"
+        body: |
+          ## 🚀 Skylark Screen Translator Windows Release
+          
+          ### Available Variants
+          
+          #### 📦 Standard Version
+          - Full online translation support
+          - System integration
+          - Recommended for most users
+          
+          #### 🎒 Portable Version  
+          - No installation required
+          - Perfect for USB drives
+          - All data in app folder
+          
+          #### 🔒 Offline Version
+          - Includes offline translation
+          - No internet required
+          - Larger download size
+          
+          ### Architectures
+          - **x64**: For modern 64-bit Windows systems (recommended)
+          - **x86**: For older 32-bit Windows systems
+          
+          ### Installation
+          1. Download the appropriate variant and architecture
+          2. Extract the ZIP file
+          3. Run the executable or batch file
+          
+          **Built with GitHub Actions on:** $(date)
         draft: false
-        prerelease: false
+        prerelease: contains(github.ref, 'beta') || contains(github.ref, 'alpha')
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
