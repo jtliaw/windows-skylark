@@ -82,23 +82,19 @@ jobs:
         if (-Not (Test-Path "skylark.ico")) {
           if (Test-Path "skylark.png") {
             # 如果有PNG图标，转换为ICO格式
-            python -c "
-from PIL import Image
+            python -c "from PIL import Image
 img = Image.open('skylark.png')
 img.save('skylark.ico', format='ICO', sizes=[(16,16), (32,32), (48,48), (64,64), (128,128), (256,256)])
-print('Converted PNG to ICO')
-"
-          else {
+print('Converted PNG to ICO')"
+          } else {
             # 创建默认图标
-            python -c "
-from PIL import Image, ImageDraw
+            python -c "from PIL import Image, ImageDraw
 img = Image.new('RGB', (256, 256), (30, 144, 255))
 draw = ImageDraw.Draw(img)
 draw.ellipse((50, 50, 206, 206), fill=(255, 255, 255))
 draw.ellipse((80, 80, 176, 176), fill=(30, 144, 255))
 img.save('skylark.ico', format='ICO')
-print('Created default ICO icon')
-"
+print('Created default ICO icon')"
           }
         }
 
