@@ -177,7 +177,7 @@ if __name__ == "__main__":
       shell: powershell
       run: |
         # 创建PyInstaller spec文件
-        $specContent = @"
+        $specContent = @'
 # -*- mode: python ; coding: utf-8 -*-
 import os
 import sys
@@ -293,7 +293,7 @@ coll = COLLECT(
     upx_exclude=[],
     name='SkylarkTranslator',
 )
-"@
+'@
         $specContent | Out-File -FilePath "skylark.spec" -Encoding UTF8
       
     - name: Build with PyInstaller
@@ -338,16 +338,16 @@ coll = COLLECT(
         }
         
         # 创建启动脚本
-        @"
+        @'
 @echo off
 chcp 65001 > nul
 echo 启动 Skylark Screen Translator...
 cd /d "%~dp0"
 start "" SkylarkTranslator.exe
-"@ | Out-File -FilePath "dist\$packageName\启动程序.bat" -Encoding Default
+'@ | Out-File -FilePath "dist\$packageName\启动程序.bat" -Encoding Default
         
         # 创建说明文件
-        @"
+        @'
 Skylark Screen Translator - Windows 版本
 版本: $version
 类型: $releaseType
@@ -374,7 +374,7 @@ Skylark Screen Translator - Windows 版本
 如遇到问题请到GitHub仓库反馈:
 https://github.com/jtliaw/Skylark-Screen-Translator
 
-"@ | Out-File -FilePath "dist\$packageName\使用说明.txt" -Encoding UTF8
+'@ | Out-File -FilePath "dist\$packageName\使用说明.txt" -Encoding UTF8
         
         # 创建ZIP包
         Compress-Archive -Path "dist\$packageName" -DestinationPath "dist\$packageName.zip" -Force
