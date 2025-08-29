@@ -71,36 +71,29 @@ jobs:
         }
       shell: powershell
       
-    - name: Create launcher script from external file
-      run: |
-        # 从外部文件读取启动器脚本内容
-        $launcherUrl = "https://raw.githubusercontent.com/jtliaw/Skylark-Screen-Translator/main/launcher.py"
-        try {
-          Invoke-WebRequest -Uri $launcherUrl -OutFile "launcher.py"
-          Write-Host "成功下载启动器脚本"
-        } catch {
-          Write-Host "无法下载启动器脚本，使用备用方案"
-          # 创建简单的启动器脚本
-          @"
-import os
-import sys
-import subprocess
-
-if __name__ == "__main__":
-    # 设置环境变量
-    os.environ["TESSERACT_CMD"] = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
-    os.environ["TESSDATA_PREFIX"] = "C:\\Program Files\\Tesseract-OCR\\tessdata"
-    
-    # 运行主程序
-    try:
-        subprocess.run([sys.executable, "main.py"], check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"程序异常退出: {e}")
-        input("按回车键退出...")
-        sys.exit(1)
-"@ | Out-File -FilePath "launcher.py" -Encoding UTF8
-        }
+    - name: Create simple launcher script
       shell: powershell
+      run: |
+        # 创建一个简单的启动器脚本
+        $launcherContent = "import os`r`n"
+        $launcherContent += "import sys`r`n"
+        $launcherContent += "import subprocess`r`n"
+        $launcherContent += "`r`n"
+        $launcherContent += "if __name__ == '__main__':`r`n"
+        $launcherContent += "    # 设置环境变量`r`n"
+        $launcherContent += "    os.environ['TESSERACT_CMD'] = 'C:\\\\Program Files\\\\Tesseract-OCR\\\\tesseract.exe'`r`n"
+        $launcherContent += "    os.environ['TESSDATA_PREFIX'] = 'C:\\\\Program Files\\\\Tesseract-OCR\\\\tessdata'`r`n"
+        $launcherContent += "    `r`n"
+        $launcherContent += "    # 运行主程序`r`n"
+        $launcherContent += "    try:`r`n"
+        $launcherContent += "        subprocess.run([sys.executable, 'main.py'], check=True)`r`n"
+        $launcherContent += "    except subprocess.CalledProcessError as e:`r`n"
+        $launcherContent += "        print(f'程序异常退出: {e}')`r`n"
+        $launcherContent += "        input('按回车键退出...')`r`n"
+        $launcherContent += "        sys.exit(1)`r`n"
+        
+        Set-Content -Path "launcher.py" -Value $launcherContent -Encoding UTF8
+        Write-Host "已创建简单的启动器脚本"
       
     - name: Build with PyInstaller
       shell: powershell
@@ -161,13 +154,13 @@ if __name__ == "__main__":
         }
         
         # 创建启动脚本
-        @"
-@echo off
-chcp 65001 > nul
-echo 启动 Skylark Screen Translator...
-cd /d %~dp0
-start "" SkylarkTranslator.exe
-"@ | Out-File -FilePath "dist\$packageName\启动程序.bat" -Encoding Default
+        $batchContent = "@echo off`r`n"
+        $batchContent += "chcp 65001 > nul`r`n"
+        $batchContent += "echo 启动 Skylark Screen Translator...`r`n"
+        $batchContent += "cd /d %~dp0`r`n"
+        $batchContent += "start `"`" SkylarkTranslator.exe`r`n"
+        
+        Set-Content -Path "dist\$packageName\启动程序.bat" -Value $batchContent -Encoding Default
         
         # 创建说明文件
         $readmeContent = "Skylark Screen Translator - Windows 版本`r`n"
