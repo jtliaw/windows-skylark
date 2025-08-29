@@ -103,7 +103,7 @@ jobs:
     - name: Create Windows launcher and spec file
       run: |
         # 创建启动器
-        @'
+        cat > skylark_launcher.py << 'EOF'
 #!/usr/bin/env python3
 """
 Skylark Screen Translator - Windows 启动器
@@ -193,13 +193,10 @@ def main():
 
 if __name__ == "__main__":
     main()
-'@ | Out-File -FilePath "skylark_launcher.py" -Encoding UTF8
+EOF
         
         # 创建PyInstaller spec文件
-        $debug_flag = if ("${{ inputs.include_debug }}" -eq "true") { "True" } else { "False" }
-        $console_flag = if ("${{ inputs.build_type }}" -eq "debug") { "True" } else { "False" }
-        
-        @"
+        cat > skylark_build.spec << 'EOF'
 # -*- mode: python ; coding: utf-8 -*-
 import os
 from pathlib import Path
@@ -218,8 +215,8 @@ a = Analysis(
     ['skylark_launcher.py'],
     pathex=[os.path.abspath('.')],
     binaries=[
-        ('C:\\\\Program Files\\\\Tesseract-OCR\\\\tesseract.exe', 'tesseract'),
-        ('C:\\\\Program Files\\\\Tesseract-OCR\\\\tessdata\\\\*.traineddata', 'tessdata'),
+        ('C:\\Program Files\\Tesseract-OCR\\tesseract.exe', 'tesseract'),
+        ('C:\\Program Files\\Tesseract-OCR\\tessdata\\*.traineddata', 'tessdata'),
     ],
     datas=[
         ('skylark_screen_translator.py', '.'),
@@ -301,11 +298,11 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='SkylarkTranslator',
-    debug=$debug_flag,
+    debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=$console_flag,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -324,8 +321,8 @@ coll = COLLECT(
     upx_exclude=[],
     name='SkylarkTranslator',
 )
-"@ | Out-File -FilePath "skylark_build.spec" -Encoding UTF8
-      shell: powershell
+EOF
+      shell: bash
       
     - name: Build with PyInstaller
       run: |
