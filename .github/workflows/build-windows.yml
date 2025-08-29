@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_type:
-        description: '发布类型'
+        description: 'Release Type'
         required: true
         default: 'test'
         type: choice
@@ -12,7 +12,7 @@ on:
           - test
           - stable
       include_debug:
-        description: '包含调试信息'
+        description: 'Include Debug Info'
         required: false
         type: boolean
         default: false
@@ -32,23 +32,23 @@ jobs:
         
     - name: Install Tesseract OCR manually
       run: |
-        # 下载并安装 Tesseract OCR
-        $tesseractUrl = "https://github.com/UB-Mannheim/tesseract/wiki"
+        # Download and install Tesseract OCR
         $downloadUrl = "https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.3.20231005.exe"
         $installerPath = "$env:TEMP\tesseract-installer.exe"
         
-        Write-Host "下载 Tesseract OCR 安装程序..."
+        Write-Host "Downloading Tesseract OCR installer..."
         Invoke-WebRequest -Uri $downloadUrl -OutFile $installerPath
         
-        Write-Host "安装 Tesseract OCR..."
+        Write-Host "Installing Tesseract OCR..."
         Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
         
-        # 添加到 PATH
+        # Add to PATH
         $tesseractPath = "C:\Program Files\Tesseract-OCR"
         if (Test-Path $tesseractPath) {
           echo "$tesseractPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "Tesseract installed successfully"
         } else {
-          Write-Host "警告: Tesseract 安装路径不存在"
+          Write-Host "Warning: Tesseract installation path does not exist"
         }
       shell: powershell
       
@@ -56,10 +56,10 @@ jobs:
       run: |
         python -m pip install --upgrade pip setuptools wheel
         
-        # 安装项目依赖
+        # Install project dependencies
         pip install -r requirements.txt
         
-        # 确保安装了所有必要的包
+        # Make sure all necessary packages are installed
         pip install pyinstaller==6.2.0
         pip install pywin32
       shell: powershell
@@ -69,7 +69,7 @@ jobs:
         $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
         New-Item -Path $tessdata -ItemType Directory -Force | Out-Null
         
-        # 下载必要的语言包
+        # Download necessary language packs
         $languages = @("eng", "chi_sim", "jpn")
         
         foreach ($lang in $languages) {
@@ -89,36 +89,36 @@ jobs:
     - name: Create launcher script
       shell: powershell
       run: |
-        # 逐行创建启动器脚本内容
+        # Create launcher script line by line
         $lines = @(
           "import os",
           "import sys",
           "import subprocess",
           "",
           "if __name__ == '__main__':",
-          "    # 设置环境变量",
+          "    # Set environment variables",
           "    os.environ['TESSERACT_CMD'] = 'C:\\\\Program Files\\\\Tesseract-OCR\\\\tesseract.exe'",
           "    os.environ['TESSDATA_PREFIX'] = 'C:\\\\Program Files\\\\Tesseract-OCR\\\\tessdata'",
           "    ",
-          "    # 运行主程序",
+          "    # Run main program",
           "    try:",
           "        subprocess.run([sys.executable, 'main.py'], check=True)",
           "    except subprocess.CalledProcessError as e:",
-          "        print(f'程序异常退出: {e}')",
-          "        input('按回车键退出...')",
+          "        print(f'Program exited with error: {e}')",
+          "        input('Press Enter to exit...')",
           "        sys.exit(1)"
         )
         
-        # 将内容写入文件
+        # Write content to file
         $lines | Out-File -FilePath "launcher.py" -Encoding UTF8
-        Write-Host "已创建启动器脚本"
+        Write-Host "Launcher script created"
       
     - name: Build with PyInstaller
       shell: powershell
       run: |
-        Write-Host "开始构建 Skylark Screen Translator..."
+        Write-Host "Building Skylark Screen Translator..."
         
-        # 使用简单的PyInstaller命令
+        # Use simple PyInstaller command
         pyinstaller --name SkylarkTranslator `
           --onefile `
           --windowed `
@@ -143,12 +143,12 @@ jobs:
           --hidden-import certifi `
           launcher.py
         
-        # 检查构建是否成功
+        # Check if build was successful
         if (!(Test-Path "dist\SkylarkTranslator.exe")) {
-          throw "构建失败：找不到可执行文件"
+          throw "Build failed: executable file not found"
         }
         
-        Write-Host "构建成功！"
+        Write-Host "Build successful!"
       
     - name: Create distribution package
       shell: powershell
@@ -157,13 +157,13 @@ jobs:
         $version = Get-Date -Format "yyyy.MM.dd.HHmm"
         $packageName = "SkylarkTranslator_Windows_${releaseType}_v${version}"
         
-        # 创建打包目录
+        # Create package directory
         New-Item -Path "dist\$packageName" -ItemType Directory -Force | Out-Null
         
-        # 复制程序文件
+        # Copy program files
         Copy-Item "dist\SkylarkTranslator.exe" "dist\$packageName\" -Force
         
-        # 复制语言包
+        # Copy language packs
         $tessdataSrc = "C:\Program Files\Tesseract-OCR\tessdata"
         $tessdataDst = "dist\$packageName\tessdata"
         if (Test-Path $tessdataSrc) {
@@ -171,52 +171,52 @@ jobs:
           Copy-Item "$tessdataSrc\*.traineddata" $tessdataDst -Force
         }
         
-        # 创建启动脚本
+        # Create startup script
         $batchLines = @(
           "@echo off",
           "chcp 65001 > nul",
-          "echo 启动 Skylark Screen Translator...",
+          "echo Starting Skylark Screen Translator...",
           "cd /d %~dp0",
           "start \"\" SkylarkTranslator.exe"
         )
-        $batchLines | Out-File -FilePath "dist\$packageName\启动程序.bat" -Encoding Default
+        $batchLines | Out-File -FilePath "dist\$packageName\start.bat" -Encoding Default
         
-        # 创建说明文件
+        # Create readme file
         $readmeLines = @(
-          "Skylark Screen Translator - Windows 版本",
-          "版本: $version",
-          "类型: $releaseType",
-          "构建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+          "Skylark Screen Translator - Windows Version",
+          "Version: $version",
+          "Type: $releaseType",
+          "Build Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
           "",
-          "== 快速开始 ==",
-          "1. 双击 '启动程序.bat' 或直接运行 SkylarkTranslator.exe",
-          "2. 首次使用请先进入'语言包管理'安装翻译包",
-          "3. 安装完成后重启程序，在设置中选择翻译语言",
+          "== Quick Start ==",
+          "1. Double-click 'start.bat' or run SkylarkTranslator.exe directly",
+          "2. First use: go to 'Language Pack Management' to install translation packages",
+          "3. After installation, restart the program and select translation language in settings",
           "",
-          "== 使用说明 ==",
-          "• 左键拖拽: 选择屏幕区域",
-          "• 右键双击: 执行OCR和翻译",
-          "• 左键单击: 显示/隐藏翻译窗口",
-          "• 鼠标滚轮: 滚动翻译内容",
+          "== Usage Instructions ==",
+          "• Left-click drag: select screen area",
+          "• Right-click double-click: perform OCR and translation",
+          "• Left-click: show/hide translation window",
+          "• Mouse wheel: scroll translation content",
           "",
-          "== 注意事项 ==",
-          "• 这是未签名的测试版本",
-          "• Windows Defender可能会显示安全警告（正常现象）",
-          "• 需要CPU支持SSE4.1指令集",
-          "• 建议运行内存2GB以上",
+          "== Notes ==",
+          "• This is an unsigned test version",
+          "• Windows Defender may show security warnings (normal)",
+          "• CPU needs to support SSE4.1 instruction set",
+          "• Recommended 2GB+ RAM",
           "",
-          "== 问题反馈 ==",
-          "如遇到问题请到GitHub仓库反馈:",
+          "== Feedback ==",
+          "If you encounter issues, please provide feedback at GitHub repository:",
           "https://github.com/jtliaw/Skylark-Screen-Translator"
         )
-        $readmeLines | Out-File -FilePath "dist\$packageName\使用说明.txt" -Encoding UTF8
+        $readmeLines | Out-File -FilePath "dist\$packageName\README.txt" -Encoding UTF8
         
-        # 创建ZIP包
+        # Create ZIP package
         Compress-Archive -Path "dist\$packageName" -DestinationPath "dist\$packageName.zip" -Force
         
-        Write-Host "打包完成: $packageName.zip"
+        Write-Host "Package created: $packageName.zip"
         
-        # 设置输出变量
+        # Set output variables
         echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "PACKAGE_PATH=dist/$packageName.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       
@@ -227,24 +227,24 @@ jobs:
         path: ${{ env.PACKAGE_PATH }}
         retention-days: 7
         
-    - name: Create release summary
+    - name: Create build summary
       shell: powershell
       run: |
         $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
         $sizeMB = [math]::Round($size/1MB, 2)
         
-        Write-Host "## 构建完成 ✅" 
-        Write-Host "- 发布类型: ${{ inputs.release_type }}"
-        Write-Host "- 包含调试信息: ${{ inputs.include_debug }}"
-        Write-Host "- 文件大小: ${sizeMB} MB"
-        Write-Host "- 文件名: ${{ env.PACKAGE_NAME }}.zip"
+        Write-Host "## Build Complete ✅" 
+        Write-Host "- Release Type: ${{ inputs.release_type }}"
+        Write-Host "- Include Debug: ${{ inputs.include_debug }}"
+        Write-Host "- File Size: ${sizeMB} MB"
+        Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
         Write-Host ""
-        Write-Host "📥 下载构建的文件:"
-        Write-Host "1. 点击上方的 Actions 标签"
-        Write-Host "2. 选择这次运行"
-        Write-Host "3. 在 Artifacts 部分下载 ZIP 文件"
+        Write-Host "📥 Download built files:"
+        Write-Host "1. Click the Actions tab above"
+        Write-Host "2. Select this run"
+        Write-Host "3. Download ZIP file in the Artifacts section"
         Write-Host ""
-        Write-Host "🧪 测试说明:"
-        Write-Host "1. 解压ZIP文件"
-        Write-Host "2. 运行 启动程序.bat 或直接运行 SkylarkTranslator.exe"
-        Write-Host "3. 首次运行需要安装语言包"
+        Write-Host "🧪 Test Instructions:"
+        Write-Host "1. Extract ZIP file"
+        Write-Host "2. Run start.bat or SkylarkTranslator.exe directly"
+        Write-Host "3. First run requires language pack installation"
