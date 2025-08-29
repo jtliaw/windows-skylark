@@ -1,16 +1,16 @@
-name: Build Test Version
+name: Build Windows Release
 
 on:
   workflow_dispatch:
     inputs:
-      build_type:
-        description: '选择构建类型'
+      release_type:
+        description: '发布类型'
         required: true
         default: 'test'
         type: choice
         options:
-          - test
-          - debug
+        - test
+        - stable
       include_debug:
         description: '包含调试信息'
         required: false
@@ -18,7 +18,7 @@ on:
         default: false
 
 jobs:
-  build-test:
+  build-windows:
     runs-on: windows-latest
     
     steps:
@@ -30,81 +30,54 @@ jobs:
       with:
         python-version: '3.11'
         
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~\AppData\Local\pip\Cache
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-          
-    - name: Install Tesseract OCR
+    - name: Install system dependencies
       run: |
-        choco install tesseract --version=5.3.3 --yes
+        # 安装 Tesseract OCR
+        choco install tesseract --version=5.3.3 -y
         echo "C:\Program Files\Tesseract-OCR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        
+        # 安装其他系统依赖（如果有）
+        # choco install package-name -y
       shell: powershell
       
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip setuptools wheel
         
-        # 核心GUI和OCR依赖
-        pip install PyQt5==5.15.10
-        pip install pytesseract==0.3.10
-        pip install Pillow==10.0.1
+        # 安装项目依赖
+        pip install -r requirements.txt
         
-        # 安装CPU版本的PyTorch（避免CUDA依赖）
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-        
-        # 翻译核心依赖
-        pip install argostranslate==1.9.6
-        pip install stanza
-        pip install ctranslate2
-        pip install sentencepiece
-        
-        # 图像和屏幕处理
-        pip install opencv-python-headless
-        pip install mss
-        pip install pynput
-        pip install screeninfo
-        
-        # 网络和其他工具
-        pip install requests==2.31.0
-        pip install certifi
-        pip install ttkthemes
-        pip install numpy>=1.21.0
-        
-        # 打包工具
+        # 确保安装了所有必要的包
         pip install pyinstaller==6.2.0
-        
-        # 如果存在requirements.txt，也安装它
-        if (Test-Path "requirements.txt") {
-          pip install -r requirements.txt
-        }
+        pip install pywin32
       shell: powershell
       
-    - name: Download Tesseract language packs
+    - name: Download Tesseract language data
       run: |
         $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
+        New-Item -Path $tessdata -ItemType Directory -Force | Out-Null
         
-        # 核心语言包
-        $essential_langs = @("eng")
+        # 下载必要的语言包
+        $languages = @("eng", "chi_sim", "jpn")
         
-        foreach ($lang in $essential_langs) {
+        foreach ($lang in $languages) {
           $url = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata"
           $output = "$tessdata\$lang.traineddata"
-          if (!(Test-Path $output)) {
-            Write-Host "Downloading $lang language pack..."
+          Write-Host "Downloading $lang language data..."
+          try {
             Invoke-WebRequest -Uri $url -OutFile $output -ErrorAction Stop
+          } catch {
+            Write-Host "Failed to download $lang, trying alternative URL..."
+            $url = "https://github.com/tesseract-ocr/tessdata/raw/main/$lang.traineddata"
+            Invoke-WebRequest -Uri $url -OutFile $output -ErrorAction SilentlyContinue
           }
         }
       shell: powershell
       
     - name: Create launcher script
-      shell: powershell
       run: |
-        # 创建启动器文件
-        Set-Content -Path "skylark_launcher.py" -Value @'
+        # 创建Windows启动器
+        $launcherContent = @'
 #!/usr/bin/env python3
 """
 Skylark Screen Translator - Windows 启动器
@@ -142,6 +115,7 @@ def setup_windows_environment():
     tesseract_paths = [
         os.path.join(internal_dir, "tesseract", "tesseract.exe"),
         os.path.join(app_dir, "tesseract", "tesseract.exe"),
+        "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
     ]
     for tesseract_path in tesseract_paths:
         if os.path.isfile(tesseract_path):
@@ -152,6 +126,7 @@ def setup_windows_environment():
     tessdata_paths = [
         os.path.join(internal_dir, "tessdata"),
         os.path.join(app_dir, "tessdata"),
+        "C:\\Program Files\\Tesseract-OCR\\tessdata",
     ]
     for tessdata_path in tessdata_paths:
         if os.path.isdir(tessdata_path):
@@ -177,15 +152,18 @@ def main():
         configure_argos_packages()
         
         app_dir = os.path.dirname(os.path.abspath(__file__))
-        main_script = os.path.join(app_dir, "skylark_screen_translator.py")
+        main_script = os.path.join(app_dir, "main.py")
         
         if not os.path.isfile(main_script):
             print(f"找不到主程序: {main_script}")
             sys.exit(1)
         
-        with open(main_script, "rb") as f:
-            code = compile(f.read(), main_script, "exec")
-            exec(code, {"__file__": main_script, "__name__": "__main__"})
+        # 添加当前目录到Python路径
+        sys.path.insert(0, app_dir)
+        
+        # 导入并运行主程序
+        from main import main as app_main
+        app_main()
             
     except Exception as e:
         traceback.print_exc()
@@ -195,98 +173,78 @@ def main():
 if __name__ == "__main__":
     main()
 '@
-        
-    - name: Create spec file
+        $launcherContent | Out-File -FilePath "launcher.py" -Encoding UTF8
       shell: powershell
+      
+    - name: Prepare PyInstaller spec
       run: |
-        # 创建spec文件
-        Set-Content -Path "skylark_build.spec" -Value @'
+        # 创建PyInstaller spec文件
+        $specContent = @'
 # -*- mode: python ; coding: utf-8 -*-
 import os
-from pathlib import Path
+import sys
+from PyInstaller.building.build_main import Analysis, EXE, COLLECT
+from PyInstaller.building.datastruct import TOC, Tree
+from PyInstaller.building.utils import _check_guts_eq
 
 block_cipher = None
 
-# 检查必要文件
-required_files = ['skylark_screen_translator.py', 'online_translator.py']
-for file in required_files:
-    if not os.path.exists(file):
-        raise FileNotFoundError(f'找不到必要文件: {file}')
-
-print('找到所有必要文件，开始构建...')
+# 添加当前目录到路径
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 a = Analysis(
-    ['skylark_launcher.py'],
-    pathex=[os.path.abspath('.')],
-    binaries=[
-        ('C:\\Program Files\\Tesseract-OCR\\tesseract.exe', 'tesseract'),
-        ('C:\\Program Files\\Tesseract-OCR\\tessdata\\*.traineddata', 'tessdata'),
-    ],
+    ['launcher.py'],
+    pathex=[os.path.dirname(os.path.abspath(__file__))],
+    binaries=[],
     datas=[
-        ('skylark_screen_translator.py', '.'),
-        ('online_translator.py', '.'),
-        ('skylark.png', '.'),
+        # 包含Python文件
+        ('*.py', '.'),
+        # 包含图标
+        ('*.png', '.'),
+        ('*.ico', '.'),
+        # 包含数据文件
+        ('*.json', '.'),
     ],
     hiddenimports=[
         'PyQt5.QtCore',
-        'PyQt5.QtGui', 
+        'PyQt5.QtGui',
         'PyQt5.QtWidgets',
-        'PyQt5.sip',
-        'sip',
+        'pytesseract',
         'PIL',
         'PIL.Image',
         'PIL.ImageGrab',
-        'PIL.ImageTk',
-        'PIL._tkinter_finder',
-        'pytesseract',
         'mss',
-        'mss.windows',
         'pynput',
         'pynput.keyboard',
         'pynput.mouse',
-        'pynput.keyboard._win32',
-        'pynput.mouse._win32',
         'screeninfo',
         'requests',
-        'requests.packages.urllib3',
-        'requests.adapters',
-        'urllib3.contrib.pyopenssl',
-        'certifi',
         'argostranslate',
         'argostranslate.package',
         'argostranslate.translate',
-        'argostranslate.settings',
-        'argostranslate.utils',
         'stanza',
         'ctranslate2',
         'sentencepiece',
-        'torch',
-        'torchvision',
-        'torchaudio',
         'numpy',
-        'numpy.core._methods',
-        'numpy.lib.format',
         'cv2',
         'ttkthemes',
-        'online_translator',
-        'json',
-        'hashlib',
-        'uuid',
-        'pkg_resources.py2_warn',
+        'certifi',
+        # 添加其他可能的隐藏导入
+        'packaging',
+        'packaging.version',
+        'packaging.specifiers',
+        'packaging.requirements',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
         'matplotlib',
-        'scipy', 
+        'scipy',
         'pandas',
-        'jupyter',
-        'PyQt5.QtWebEngine',
-        'PyQt5.QtWebEngineWidgets',
-        'tensorflow',
-        'keras',
         'tkinter',
+        'test',
+        'unittest',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -294,25 +252,37 @@ a = Analysis(
     noarchive=False,
 )
 
+# 添加Tesseract二进制文件和数据
+tesseract_bin = 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
+tessdata_dir = 'C:\\Program Files\\Tesseract-OCR\\tessdata'
+
+if os.path.exists(tesseract_bin):
+    a.binaries.append((tesseract_bin, 'tesseract'))
+    
+if os.path.exists(tessdata_dir):
+    a.datas.append((tessdata_dir, 'tessdata'))
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     name='SkylarkTranslator',
     debug=False,
-    bootloader_ignore_signals=False,
     strip=False,
-    upx=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='skylark.png' if os.path.exists('skylark.png') else None,
+    icon='icon.ico' if os.path.exists('icon.ico') else None,
 )
 
 coll = COLLECT(
@@ -321,54 +291,69 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=False,
+    upx=True,
     upx_exclude=[],
     name='SkylarkTranslator',
 )
 '@
+        $specContent | Out-File -FilePath "skylark.spec" -Encoding UTF8
+      shell: powershell
       
     - name: Build with PyInstaller
       run: |
         Write-Host "开始构建 Skylark Screen Translator..."
-        pyinstaller skylark_build.spec --clean --noconfirm
         
+        # 构建应用
+        pyinstaller skylark.spec --clean --noconfirm
+        
+        # 检查构建是否成功
         if (!(Test-Path "dist\SkylarkTranslator\SkylarkTranslator.exe")) {
           throw "构建失败：找不到可执行文件"
         }
         
         Write-Host "构建成功！"
-        Get-ChildItem "dist\SkylarkTranslator" -Recurse | Measure-Object -Property Length -Sum | ForEach-Object { "总大小: $([math]::Round($_.Sum/1MB, 2)) MB" }
+        
+        # 显示构建大小
+        Get-ChildItem "dist\SkylarkTranslator" -Recurse | Measure-Object -Property Length -Sum | ForEach-Object { 
+          Write-Host "总大小: $([math]::Round($_.Sum/1MB, 2)) MB" 
+        }
       shell: powershell
       
-    - name: Create portable package
+    - name: Create distribution package
       run: |
-        $buildType = "${{ inputs.build_type }}"
-        $timestamp = Get-Date -Format "yyyyMMdd_HHmm"
-        $packageName = "SkylarkTranslator_Windows_${buildType}_${timestamp}"
+        $releaseType = "${{ inputs.release_type }}"
+        $version = Get-Date -Format "yyyy.MM.dd.HHmm"
+        $packageName = "SkylarkTranslator_Windows_${releaseType}_v${version}"
         
         # 创建打包目录
-        New-Item -Path "package\$packageName" -ItemType Directory -Force | Out-Null
+        New-Item -Path "dist\$packageName" -ItemType Directory -Force | Out-Null
         
         # 复制程序文件
-        Copy-Item "dist\SkylarkTranslator\*" "package\$packageName\" -Recurse
+        Copy-Item "dist\SkylarkTranslator\*" "dist\$packageName\" -Recurse -Force
+        
+        # 复制语言包
+        $tessdataSrc = "C:\Program Files\Tesseract-OCR\tessdata"
+        $tessdataDst = "dist\$packageName\tessdata"
+        if (Test-Path $tessdataSrc) {
+          New-Item -Path $tessdataDst -ItemType Directory -Force | Out-Null
+          Copy-Item "$tessdataSrc\*.traineddata" $tessdataDst -Force
+        }
         
         # 创建启动脚本
         @"
 @echo off
+chcp 65001 > nul
 echo 启动 Skylark Screen Translator...
 cd /d "%~dp0"
-SkylarkTranslator.exe
-if errorlevel 1 (
-    echo 程序异常退出，错误代码: %errorlevel%
-    pause
-)
-"@ | Out-File -FilePath "package\$packageName\启动程序.bat" -Encoding Default
+start "" SkylarkTranslator.exe
+"@ | Out-File -FilePath "dist\$packageName\启动程序.bat" -Encoding Default
         
         # 创建说明文件
         @"
-Skylark Screen Translator - Windows 测试版
+Skylark Screen Translator - Windows 版本
+版本: $version
+类型: $releaseType
 构建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-构建类型: $buildType
 
 == 快速开始 ==
 1. 双击 "启动程序.bat" 或直接运行 SkylarkTranslator.exe
@@ -391,29 +376,32 @@ Skylark Screen Translator - Windows 测试版
 如遇到问题请到GitHub仓库反馈:
 https://github.com/jtliaw/Skylark-Screen-Translator
 
-"@ | Out-File -FilePath "package\$packageName\使用说明.txt" -Encoding UTF8
+"@ | Out-File -FilePath "dist\$packageName\使用说明.txt" -Encoding UTF8
         
         # 创建ZIP包
-        Compress-Archive -Path "package\$packageName" -DestinationPath "$packageName.zip" -Force
+        Compress-Archive -Path "dist\$packageName" -DestinationPath "dist\$packageName.zip" -Force
         
         Write-Host "打包完成: $packageName.zip"
+        
+        # 设置输出变量
         echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "PACKAGE_PATH=dist/$packageName.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       shell: powershell
       
-    - name: Upload test build
-      uses: actions/upload-artifact@v3
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.PACKAGE_NAME }}
-        path: ${{ env.PACKAGE_NAME }}.zip
+        name: SkylarkTranslator-Windows-${{ inputs.release_type }}
+        path: ${{ env.PACKAGE_PATH }}
         retention-days: 7
         
-    - name: Create build summary
+    - name: Create release summary
       run: |
-        $size = (Get-Item "${{ env.PACKAGE_NAME }}.zip").Length
+        $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
         $sizeMB = [math]::Round($size/1MB, 2)
         
         Write-Host "## 构建完成 ✅" 
-        Write-Host "- 构建类型: ${{ inputs.build_type }}"
+        Write-Host "- 发布类型: ${{ inputs.release_type }}"
         Write-Host "- 包含调试信息: ${{ inputs.include_debug }}"
         Write-Host "- 文件大小: ${sizeMB} MB"
         Write-Host "- 文件名: ${{ env.PACKAGE_NAME }}.zip"
