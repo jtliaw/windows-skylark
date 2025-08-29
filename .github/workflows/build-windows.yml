@@ -171,15 +171,15 @@ jobs:
           Copy-Item "$tessdataSrc\*.traineddata" $tessdataDst -Force
         }
         
-        # Create startup script
-        $batchLines = @(
-          "@echo off",
-          "chcp 65001 > nul",
-          "echo Starting Skylark Screen Translator...",
-          "cd /d %~dp0",
-          'start "" SkylarkTranslator.exe'
-        )
-        $batchLines | Out-File -FilePath "dist\$packageName\start.bat" -Encoding Default
+        # Create startup script - using here-string to avoid escaping issues
+        $batchContent = @'
+@echo off
+chcp 65001 > nul
+echo Starting Skylark Screen Translator...
+cd /d %~dp0
+start "" SkylarkTranslator.exe
+'@
+        $batchContent | Out-File -FilePath "dist\$packageName\start.bat" -Encoding Default
         
         # Create readme file
         $readmeLines = @(
