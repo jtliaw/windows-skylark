@@ -101,10 +101,10 @@ jobs:
       shell: powershell
       
     - name: Create Windows launcher and spec file
-      shell: powershell  # 将 bash 改为 powershell
+      shell: powershell
       run: |
-        # 创建启动器
-        cat > skylark_launcher.py << 'EOF'
+        # 创建启动器文件
+        $launcherContent = @'
 #!/usr/bin/env python3
 """
 Skylark Screen Translator - Windows 启动器
@@ -194,10 +194,11 @@ def main():
 
 if __name__ == "__main__":
     main()
-EOF
+'@
+        $launcherContent | Out-File -FilePath skylark_launcher.py -Encoding UTF8
         
-        # 创建PyInstaller spec文件
-        cat > skylark_build.spec << 'EOF'
+        # 创建spec文件
+        $specContent = @'
 # -*- mode: python ; coding: utf-8 -*-
 import os
 from pathlib import Path
@@ -322,8 +323,8 @@ coll = COLLECT(
     upx_exclude=[],
     name='SkylarkTranslator',
 )
-EOF
-      shell: bash
+'@
+        $specContent | Out-File -FilePath skylark_build.spec -Encoding UTF8
       
     - name: Build with PyInstaller
       run: |
@@ -374,10 +375,10 @@ Skylark Screen Translator - Windows 测试版
 3. 安装完成后重启程序，在设置中选择翻译语言
 
 == 使用说明 ==
-• 左键拖拽：选择屏幕区域
-• 右键双击：执行OCR和翻译
-• 左键单击：显示/隐藏翻译窗口
-• 鼠标滚轮：滚动翻译内容
+• 左键拖拽: 选择屏幕区域
+• 右键双击: 执行OCR和翻译
+• 左键单击: 显示/隐藏翻译窗口
+• 鼠标滚轮: 滚动翻译内容
 
 == 注意事项 ==
 • 这是未签名的测试版本
@@ -386,7 +387,7 @@ Skylark Screen Translator - Windows 测试版
 • 建议运行内存2GB以上
 
 == 问题反馈 ==
-如遇到问题请到GitHub仓库反馈：
+如遇到问题请到GitHub仓库反馈:
 https://github.com/jtliaw/Skylark-Screen-Translator
 
 "@ | Out-File -FilePath "package\$packageName\使用说明.txt" -Encoding UTF8
@@ -416,12 +417,12 @@ https://github.com/jtliaw/Skylark-Screen-Translator
         Write-Host "- 文件大小: ${sizeMB} MB"
         Write-Host "- 文件名: ${{ env.PACKAGE_NAME }}.zip"
         Write-Host ""
-        Write-Host "📥 下载构建的文件："
+        Write-Host "📥 下载构建的文件:"
         Write-Host "1. 点击上方的 Actions 标签"
         Write-Host "2. 选择这次运行"
         Write-Host "3. 在 Artifacts 部分下载 ZIP 文件"
         Write-Host ""
-        Write-Host "🧪 测试说明："
+        Write-Host "🧪 测试说明:"
         Write-Host "1. 解压ZIP文件"
         Write-Host "2. 运行 启动程序.bat 或直接运行 SkylarkTranslator.exe"
         Write-Host "3. 首次运行需要安装语言包"
