@@ -71,114 +71,43 @@ jobs:
         }
       shell: powershell
       
-    - name: Create launcher script
-      shell: powershell
+    - name: Create launcher script from external file
       run: |
-        # 创建启动器文件
-        $launcherContent = @"
-#!/usr/bin/env python3
-"""
-Skylark Screen Translator - Windows 启动器
-"""
-
+        # 从外部文件读取启动器脚本内容
+        $launcherUrl = "https://raw.githubusercontent.com/jtliaw/Skylark-Screen-Translator/main/launcher.py"
+        try {
+          Invoke-WebRequest -Uri $launcherUrl -OutFile "launcher.py"
+          Write-Host "成功下载启动器脚本"
+        } catch {
+          Write-Host "无法下载启动器脚本，使用备用方案"
+          # 创建简单的启动器脚本
+          @"
 import os
 import sys
-import traceback
-import logging
-
-def setup_logging():
-    log_format = '[%(levelname)s] %(message)s'
-    logging.basicConfig(level=logging.INFO, format=log_format)
-    return logging.getLogger(__name__)
-
-logger = setup_logging()
-
-def setup_windows_environment():
-    """设置 Windows 环境变量和路径"""
-    app_dir = os.path.dirname(os.path.abspath(__file__))
-    internal_dir = os.path.join(app_dir, "_internal")
-    
-    # SSL 证书
-    cert_paths = [
-        os.path.join(internal_dir, "certifi", "cacert.pem"),
-        os.path.join(app_dir, "certifi", "cacert.pem"),
-    ]
-    for cert_path in cert_paths:
-        if os.path.isfile(cert_path):
-            os.environ["SSL_CERT_FILE"] = cert_path
-            os.environ["REQUESTS_CA_BUNDLE"] = cert_path
-            break
-    
-    # Tesseract 路径
-    tesseract_paths = [
-        os.path.join(internal_dir, "tesseract", "tesseract.exe"),
-        os.path.join(app_dir, "tesseract", "tesseract.exe"),
-        "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
-    ]
-    for tesseract_path in tesseract_paths:
-        if os.path.isfile(tesseract_path):
-            os.environ["TESSERACT_CMD"] = tesseract_path
-            break
-    
-    # Tessdata 目录
-    tessdata_paths = [
-        os.path.join(internal_dir, "tessdata"),
-        os.path.join(app_dir, "tessdata"),
-        "C:\\Program Files\\Tesseract-OCR\\tessdata",
-    ]
-    for tessdata_path in tessdata_paths:
-        if os.path.isdir(tessdata_path):
-            os.environ["TESSDATA_PREFIX"] = tessdata_path
-            break
-
-def configure_argos_packages():
-    """配置 argostranslate 语言包目录"""
-    user_data_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "argos-translate", "packages")
-    
-    if os.environ.get("ARGOS_PACKAGES_DIR"):
-        return
-    
-    try:
-        os.makedirs(user_data_dir, exist_ok=True)
-        os.environ["ARGOS_PACKAGES_DIR"] = user_data_dir
-    except Exception:
-        pass
-
-def main():
-    try:
-        setup_windows_environment()
-        configure_argos_packages()
-        
-        app_dir = os.path.dirname(os.path.abspath(__file__))
-        main_script = os.path.join(app_dir, "main.py")
-        
-        if not os.path.isfile(main_script):
-            print(f"找不到主程序: {main_script}")
-            sys.exit(1)
-        
-        # 添加当前目录到Python路径
-        sys.path.insert(0, app_dir)
-        
-        # 导入并运行主程序
-        from main import main as app_main
-        app_main()
-            
-    except Exception as e:
-        traceback.print_exc()
-        input("程序异常，按回车键退出...")
-        sys.exit(1)
+import subprocess
 
 if __name__ == "__main__":
-    main()
-"@
-        $launcherContent | Out-File -FilePath "launcher.py" -Encoding UTF8
+    # 设置环境变量
+    os.environ["TESSERACT_CMD"] = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+    os.environ["TESSDATA_PREFIX"] = "C:\\Program Files\\Tesseract-OCR\\tessdata"
+    
+    # 运行主程序
+    try:
+        subprocess.run([sys.executable, "main.py"], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"程序异常退出: {e}")
+        input("按回车键退出...")
+        sys.exit(1)
+"@ | Out-File -FilePath "launcher.py" -Encoding UTF8
+        }
+      shell: powershell
       
     - name: Build with PyInstaller
       shell: powershell
       run: |
         Write-Host "开始构建 Skylark Screen Translator..."
         
-        # 使用简单的PyInstaller命令而不是spec文件
+        # 使用简单的PyInstaller命令
         pyinstaller --name SkylarkTranslator `
           --onefile `
           --windowed `
@@ -232,43 +161,37 @@ if __name__ == "__main__":
         }
         
         # 创建启动脚本
-        $batchContent = @"
+        @"
 @echo off
 chcp 65001 > nul
 echo 启动 Skylark Screen Translator...
 cd /d %~dp0
 start "" SkylarkTranslator.exe
-"@
-        Set-Content -Path "dist\$packageName\启动程序.bat" -Value $batchContent -Encoding Default
+"@ | Out-File -FilePath "dist\$packageName\启动程序.bat" -Encoding Default
         
         # 创建说明文件
-        $readmeContent = @"
-Skylark Screen Translator - Windows 版本
-版本: $version
-类型: $releaseType
-构建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-
-== 快速开始 ==
-1. 双击 '启动程序.bat' 或直接运行 SkylarkTranslator.exe
-2. 首次使用请先进入'语言包管理'安装翻译包
-3. 安装完成后重启程序，在设置中选择翻译语言
-
-== 使用说明 ==
-• 左键拖拽: 选择屏幕区域
-• 右键双击: 执行OCR和翻译
-• 左键单击: 显示/隐藏翻译窗口
-• 鼠标滚轮: 滚动翻译内容
-
-== 注意事项 ==
-• 这是未签名的测试版本
-• Windows Defender可能会显示安全警告（正常现象）
-• 需要CPU支持SSE4.1指令集
-• 建议运行内存2GB以上
-
-== 问题反馈 ==
-如遇到问题请到GitHub仓库反馈:
-https://github.com/jtliaw/Skylark-Screen-Translator
-"@
+        $readmeContent = "Skylark Screen Translator - Windows 版本`r`n"
+        $readmeContent += "版本: $version`r`n"
+        $readmeContent += "类型: $releaseType`r`n"
+        $readmeContent += "构建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`r`n`r`n"
+        $readmeContent += "== 快速开始 ==`r`n"
+        $readmeContent += "1. 双击 '启动程序.bat' 或直接运行 SkylarkTranslator.exe`r`n"
+        $readmeContent += "2. 首次使用请先进入'语言包管理'安装翻译包`r`n"
+        $readmeContent += "3. 安装完成后重启程序，在设置中选择翻译语言`r`n`r`n"
+        $readmeContent += "== 使用说明 ==`r`n"
+        $readmeContent += "• 左键拖拽: 选择屏幕区域`r`n"
+        $readmeContent += "• 右键双击: 执行OCR和翻译`r`n"
+        $readmeContent += "• 左键单击: 显示/隐藏翻译窗口`r`n"
+        $readmeContent += "• 鼠标滚轮: 滚动翻译内容`r`n`r`n"
+        $readmeContent += "== 注意事项 ==`r`n"
+        $readmeContent += "• 这是未签名的测试版本`r`n"
+        $readmeContent += "• Windows Defender可能会显示安全警告（正常现象）`r`n"
+        $readmeContent += "• 需要CPU支持SSE4.1指令集`r`n"
+        $readmeContent += "• 建议运行内存2GB以上`r`n`r`n"
+        $readmeContent += "== 问题反馈 ==`r`n"
+        $readmeContent += "如遇到问题请到GitHub仓库反馈:`r`n"
+        $readmeContent += "https://github.com/jtliaw/Skylark-Screen-Translator"
+        
         Set-Content -Path "dist\$packageName\使用说明.txt" -Value $readmeContent -Encoding UTF8
         
         # 创建ZIP包
