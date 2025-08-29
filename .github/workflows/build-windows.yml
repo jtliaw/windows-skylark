@@ -75,7 +75,7 @@ jobs:
       shell: powershell
       run: |
         # 创建Windows启动器
-        $launcherContent = @"
+        $launcherContent = @'
 #!/usr/bin/env python3
 """
 Skylark Screen Translator - Windows 启动器
@@ -170,7 +170,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-"@
+'@
         $launcherContent | Out-File -FilePath "launcher.py" -Encoding UTF8
       
     - name: Prepare PyInstaller spec
