@@ -232,18 +232,18 @@ jobs:
         $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
         $sizeMB = [math]::Round($size/1MB, 2)
         
-        Write-Host "## Build Complete ✅" 
+        Write-Host "## Build Complete"
         Write-Host "- Release Type: ${{ inputs.release_type }}"
         Write-Host "- Include Debug: ${{ inputs.include_debug }}"
         Write-Host "- File Size: ${sizeMB} MB"
         Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
         Write-Host ""
-        Write-Host "📥 Download built files:"
+        Write-Host "Download built files:"
         Write-Host "1. Click the Actions tab above"
         Write-Host "2. Select this run"
         Write-Host "3. Download ZIP file in the Artifacts section"
         Write-Host ""
-        Write-Host "🧪 Test Instructions:"
+        Write-Host "Test Instructions:"
         Write-Host "1. Extract ZIP file"
         Write-Host "2. Run start.bat or SkylarkTranslator.exe directly"
         Write-Host "3. First run requires language pack installation"
