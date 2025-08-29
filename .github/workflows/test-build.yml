@@ -88,7 +88,7 @@ jobs:
         $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
         
         # 核心语言包
-        $essential_langs = @("eng", "chi_sim", "jpn")
+        $essential_langs = @("eng")
         
         foreach ($lang in $essential_langs) {
           $url = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata"
@@ -101,6 +101,7 @@ jobs:
       shell: powershell
       
     - name: Create Windows launcher and spec file
+      shell: powershell  # 将 bash 改为 powershell
       run: |
         # 创建启动器
         cat > skylark_launcher.py << 'EOF'
