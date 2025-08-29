@@ -32,6 +32,7 @@ jobs:
         
     - name: Install system dependencies
       run: |
+        # 安装 Tesseract OCR
         choco install tesseract --version=5.3.3 -y
         echo "C:\Program Files\Tesseract-OCR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       shell: powershell
@@ -39,7 +40,11 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip setuptools wheel
+        
+        # 安装项目依赖
         pip install -r requirements.txt
+        
+        # 确保安装了所有必要的包
         pip install pyinstaller==6.2.0
         pip install pywin32
       shell: powershell
@@ -48,13 +53,18 @@ jobs:
       run: |
         $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
         New-Item -Path $tessdata -ItemType Directory -Force | Out-Null
+        
+        # 下载必要的语言包
         $languages = @("eng", "chi_sim", "jpn")
+        
         foreach ($lang in $languages) {
           $url = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata"
           $output = "$tessdata\$lang.traineddata"
+          Write-Host "Downloading $lang language data..."
           try {
             Invoke-WebRequest -Uri $url -OutFile $output -ErrorAction Stop
           } catch {
+            Write-Host "Failed to download $lang, trying alternative URL..."
             $url = "https://github.com/tesseract-ocr/tessdata/raw/main/$lang.traineddata"
             Invoke-WebRequest -Uri $url -OutFile $output -ErrorAction SilentlyContinue
           }
@@ -62,177 +72,205 @@ jobs:
       shell: powershell
       
     - name: Create launcher script
-      shell: powershell
       run: |
-        @"
-#!/usr/bin/env python3
-"""
-Skylark Screen Translator - Windows 启动器
-"""
-
-import os
-import sys
-import traceback
-import logging
-
-def setup_logging():
-    log_format = '[%(levelname)s] %(message)s'
-    logging.basicConfig(level=logging.INFO, format=log_format)
-    return logging.getLogger(__name__)
-
-logger = setup_logging()
-
-def setup_windows_environment():
-    app_dir = os.path.dirname(os.path.abspath(__file__))
-    internal_dir = os.path.join(app_dir, "_internal")
-    cert_paths = [
-        os.path.join(internal_dir, "certifi", "cacert.pem"),
-        os.path.join(app_dir, "certifi", "cacert.pem"),
-    ]
-    for cert_path in cert_paths:
-        if os.path.isfile(cert_path):
-            os.environ["SSL_CERT_FILE"] = cert_path
-            os.environ["REQUESTS_CA_BUNDLE"] = cert_path
-            break
-    tesseract_paths = [
-        os.path.join(internal_dir, "tesseract", "tesseract.exe"),
-        os.path.join(app_dir, "tesseract", "tesseract.exe"),
-        "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
-    ]
-    for tesseract_path in tesseract_paths:
-        if os.path.isfile(tesseract_path):
-            os.environ["TESSERACT_CMD"] = tesseract_path
-            break
-    tessdata_paths = [
-        os.path.join(internal_dir, "tessdata"),
-        os.path.join(app_dir, "tessdata"),
-        "C:\\Program Files\\Tesseract-OCR\\tessdata",
-    ]
-    for tessdata_path in tessdata_paths:
-        if os.path.isdir(tessdata_path):
-            os.environ["TESSDATA_PREFIX"] = tessdata_path
-            break
-
-def configure_argos_packages():
-    user_data_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "argos-translate", "packages")
-    if os.environ.get("ARGOS_PACKAGES_DIR"):
-        return
-    try:
-        os.makedirs(user_data_dir, exist_ok=True)
-        os.environ["ARGOS_PACKAGES_DIR"] = user_data_dir
-    except Exception:
-        pass
-
-def main():
-    try:
-        setup_windows_environment()
-        configure_argos_packages()
-        app_dir = os.path.dirname(os.path.abspath(__file__))
-        main_script = os.path.join(app_dir, "main.py")
-        if not os.path.isfile(main_script):
-            print(f"找不到主程序: {main_script}")
-            sys.exit(1)
-        sys.path.insert(0, app_dir)
-        from main import main as app_main
-        app_main()
-    except Exception:
-        traceback.print_exc()
-        input("程序异常，按回车键退出...")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()
-"@ | Out-File -FilePath "launcher.py" -Encoding UTF8
-      
-    - name: Prepare PyInstaller spec
+        # 创建启动器文件
+        Write-Output "#!/usr/bin/env python3" > launcher.py
+        Write-Output '"""' >> launcher.py
+        Write-Output "Skylark Screen Translator - Windows 启动器" >> launcher.py
+        Write-Output '"""' >> launcher.py
+        Write-Output "" >> launcher.py
+        Write-Output "import os" >> launcher.py
+        Write-Output "import sys" >> launcher.py
+        Write-Output "import traceback" >> launcher.py
+        Write-Output "import logging" >> launcher.py
+        Write-Output "" >> launcher.py
+        Write-Output "def setup_logging():" >> launcher.py
+        Write-Output "    log_format = '[%(levelname)s] %(message)s'" >> launcher.py
+        Write-Output "    logging.basicConfig(level=logging.INFO, format=log_format)" >> launcher.py
+        Write-Output "    return logging.getLogger(__name__)" >> launcher.py
+        Write-Output "" >> launcher.py
+        Write-Output "logger = setup_logging()" >> launcher.py
+        Write-Output "" >> launcher.py
+        Write-Output "def setup_windows_environment():" >> launcher.py
+        Write-Output '    """设置 Windows 环境变量和路径"""' >> launcher.py
+        Write-Output "    app_dir = os.path.dirname(os.path.abspath(__file__))" >> launcher.py
+        Write-Output "    internal_dir = os.path.join(app_dir, \"_internal\")" >> launcher.py
+        Write-Output "    " >> launcher.py
+        Write-Output "    # SSL 证书" >> launcher.py
+        Write-Output "    cert_paths = [" >> launcher.py
+        Write-Output "        os.path.join(internal_dir, \"certifi\", \"cacert.pem\")," >> launcher.py
+        Write-Output "        os.path.join(app_dir, \"certifi\", \"cacert.pem\")," >> launcher.py
+        Write-Output "    ]" >> launcher.py
+        Write-Output "    for cert_path in cert_paths:" >> launcher.py
+        Write-Output "        if os.path.isfile(cert_path):" >> launcher.py
+        Write-Output "            os.environ[\"SSL_CERT_FILE\"] = cert_path" >> launcher.py
+        Write-Output "            os.environ[\"REQUESTS_CA_BUNDLE\"] = cert_path" >> launcher.py
+        Write-Output "            break" >> launcher.py
+        Write-Output "    " >> launcher.py
+        Write-Output "    # Tesseract 路径" >> launcher.py
+        Write-Output "    tesseract_paths = [" >> launcher.py
+        Write-Output "        os.path.join(internal_dir, \"tesseract\", \"tesseract.exe\")," >> launcher.py
+        Write-Output "        os.path.join(app_dir, \"tesseract\", \"tesseract.exe\")," >> launcher.py
+        Write-Output "        \"C:\\\\Program Files\\\\Tesseract-OCR\\\\tesseract.exe\"," >> launcher.py
+        Write-Output "    ]" >> launcher.py
+        Write-Output "    for tesseract_path in tesseract_paths:" >> launcher.py
+        Write-Output "        if os.path.isfile(tesseract_path):" >> launcher.py
+        Write-Output "            os.environ[\"TESSERACT_CMD\"] = tesseract_path" >> launcher.py
+        Write-Output "            break" >> launcher.py
+        Write-Output "    " >> launcher.py
+        Write-Output "    # Tessdata 目录" >> launcher.py
+        Write-Output "    tessdata_paths = [" >> launcher.py
+        Write-Output "        os.path.join(internal_dir, \"tessdata\")," >> launcher.py
+        Write-Output "        os.path.join(app_dir, \"tessdata\")," >> launcher.py
+        Write-Output "        \"C:\\\\Program Files\\\\Tesseract-OCR\\\\tessdata\"," >> launcher.py
+        Write-Output "    ]" >> launcher.py
+        Write-Output "    for tessdata_path in tessdata_paths:" >> launcher.py
+        Write-Output "        if os.path.isdir(tessdata_path):" >> launcher.py
+        Write-Output "            os.environ[\"TESSDATA_PREFIX\"] = tessdata_path" >> launcher.py
+        Write-Output "            break" >> launcher.py
+        Write-Output "" >> launcher.py
+        Write-Output "def configure_argos_packages():" >> launcher.py
+        Write-Output '    """配置 argostranslate 语言包目录"""' >> launcher.py
+        Write-Output "    user_data_dir = os.path.join(os.path.expanduser(\"~\"), \"AppData\", \"Local\", \"argos-translate\", \"packages\")" >> launcher.py
+        Write-Output "    " >> launcher.py
+        Write-Output "    if os.environ.get(\"ARGOS_PACKAGES_DIR\"):" >> launcher.py
+        Write-Output "        return" >> launcher.py
+        Write-Output "    " >> launcher.py
+        Write-Output "    try:" >> launcher.py
+        Write-Output "        os.makedirs(user_data_dir, exist_ok=True)" >> launcher.py
+        Write-Output "        os.environ[\"ARGOS_PACKAGES_DIR\"] = user_data_dir" >> launcher.py
+        Write-Output "    except Exception:" >> launcher.py
+        Write-Output "        pass" >> launcher.py
+        Write-Output "" >> launcher.py
+        Write-Output "def main():" >> launcher.py
+        Write-Output "    try:" >> launcher.py
+        Write-Output "        setup_windows_environment()" >> launcher.py
+        Write-Output "        configure_argos_packages()" >> launcher.py
+        Write-Output "        " >> launcher.py
+        Write-Output "        app_dir = os.path.dirname(os.path.abspath(__file__))" >> launcher.py
+        Write-Output "        main_script = os.path.join(app_dir, \"main.py\")" >> launcher.py
+        Write-Output "        " >> launcher.py
+        Write-Output "        if not os.path.isfile(main_script):" >> launcher.py
+        Write-Output "            print(f\"找不到主程序: {main_script}\")" >> launcher.py
+        Write-Output "            sys.exit(1)" >> launcher.py
+        Write-Output "        " >> launcher.py
+        Write-Output "        # 添加当前目录到Python路径" >> launcher.py
+        Write-Output "        sys.path.insert(0, app_dir)" >> launcher.py
+        Write-Output "        " >> launcher.py
+        Write-Output "        # 导入并运行主程序" >> launcher.py
+        Write-Output "        from main import main as app_main" >> launcher.py
+        Write-Output "        app_main()" >> launcher.py
+        Write-Output "            " >> launcher.py
+        Write-Output "    except Exception as e:" >> launcher.py
+        Write-Output "        traceback.print_exc()" >> launcher.py
+        Write-Output "        input(\"程序异常，按回车键退出...\")" >> launcher.py
+        Write-Output "        sys.exit(1)" >> launcher.py
+        Write-Output "" >> launcher.py
+        Write-Output "if __name__ == \"__main__\":" >> launcher.py
+        Write-Output "    main()" >> launcher.py
       shell: powershell
-      run: |
-        @"
-# -*- mode: python ; coding: utf-8 -*-
-import os
-import sys
-from PyInstaller.building.build_main import Analysis, EXE, COLLECT
-from PyInstaller.building.datastruct import TOC, Tree
-from PyInstaller.building.utils import _check_guts_eq
-
-block_cipher = None
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-a = Analysis(
-    ['launcher.py'],
-    pathex=[os.path.dirname(os.path.abspath(__file__))],
-    binaries=[],
-    datas=[
-        ('*.py', '.'),
-        ('*.png', '.'),
-        ('*.ico', '.'),
-        ('*.json', '.'),
-    ],
-    hiddenimports=[
-        'PyQt5.QtCore','PyQt5.QtGui','PyQt5.QtWidgets',
-        'pytesseract','PIL','PIL.Image','PIL.ImageGrab',
-        'mss','pynput','pynput.keyboard','pynput.mouse',
-        'screeninfo','requests','argostranslate','argostranslate.package',
-        'argostranslate.translate','stanza','ctranslate2','sentencepiece',
-        'numpy','cv2','ttkthemes','certifi',
-        'packaging','packaging.version','packaging.specifiers','packaging.requirements',
-    ],
-    excludes=['matplotlib','scipy','pandas','tkinter','test','unittest'],
-)
-
-tesseract_bin = 'C:\\Program Files\\Tesseract-OCR\\tesseract.exe'
-tessdata_dir = 'C:\\Program Files\\Tesseract-OCR\\tessdata'
-if os.path.exists(tesseract_bin):
-    a.binaries.append((tesseract_bin, 'tesseract'))
-if os.path.exists(tessdata_dir):
-    a.datas.append((tessdata_dir, 'tessdata'))
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-exe = EXE(pyz,a.scripts,a.binaries,a.zipfiles,a.datas,
-          name='SkylarkTranslator',console=False,
-          icon='icon.ico' if os.path.exists('icon.ico') else None)
-coll = COLLECT(exe,a.binaries,a.zipfiles,a.datas,name='SkylarkTranslator')
-"@ | Out-File -FilePath "skylark.spec" -Encoding UTF8
       
     - name: Build with PyInstaller
-      shell: powershell
       run: |
-        pyinstaller skylark.spec --clean --noconfirm
-        if (!(Test-Path "dist\SkylarkTranslator\SkylarkTranslator.exe")) {
+        Write-Host "开始构建 Skylark Screen Translator..."
+        
+        # 使用简单的PyInstaller命令而不是spec文件
+        pyinstaller --name SkylarkTranslator `
+          --onefile `
+          --windowed `
+          --icon icon.ico `
+          --add-data "C:\Program Files\Tesseract-OCR\tesseract.exe;." `
+          --add-data "C:\Program Files\Tesseract-OCR\tessdata;tessdata" `
+          --hidden-import PyQt5.QtCore `
+          --hidden-import PyQt5.QtGui `
+          --hidden-import PyQt5.QtWidgets `
+          --hidden-import pytesseract `
+          --hidden-import PIL `
+          --hidden-import mss `
+          --hidden-import pynput `
+          --hidden-import screeninfo `
+          --hidden-import requests `
+          --hidden-import argostranslate `
+          --hidden-import stanza `
+          --hidden-import ctranslate2 `
+          --hidden-import sentencepiece `
+          --hidden-import numpy `
+          --hidden-import cv2 `
+          --hidden-import ttkthemes `
+          --hidden-import certifi `
+          launcher.py
+        
+        # 检查构建是否成功
+        if (!(Test-Path "dist\SkylarkTranslator.exe")) {
           throw "构建失败：找不到可执行文件"
         }
+        
+        Write-Host "构建成功！"
+      shell: powershell
       
     - name: Create distribution package
-      shell: powershell
       run: |
         $releaseType = "${{ inputs.release_type }}"
         $version = Get-Date -Format "yyyy.MM.dd.HHmm"
         $packageName = "SkylarkTranslator_Windows_${releaseType}_v${version}"
+        
+        # 创建打包目录
         New-Item -Path "dist\$packageName" -ItemType Directory -Force | Out-Null
-        Copy-Item "dist\SkylarkTranslator\*" "dist\$packageName\" -Recurse -Force
+        
+        # 复制程序文件
+        Copy-Item "dist\SkylarkTranslator.exe" "dist\$packageName\" -Force
+        
+        # 复制语言包
         $tessdataSrc = "C:\Program Files\Tesseract-OCR\tessdata"
         $tessdataDst = "dist\$packageName\tessdata"
         if (Test-Path $tessdataSrc) {
           New-Item -Path $tessdataDst -ItemType Directory -Force | Out-Null
           Copy-Item "$tessdataSrc\*.traineddata" $tessdataDst -Force
         }
-        @"
-@echo off
+        
+        # 创建启动脚本
+        Set-Content -Path "dist\$packageName\启动程序.bat" -Value "@echo off
 chcp 65001 > nul
 echo 启动 Skylark Screen Translator...
-cd /d "%~dp0"
-start "" SkylarkTranslator.exe
-"@ | Out-File -FilePath "dist\$packageName\启动程序.bat" -Encoding Default
-        @"
-Skylark Screen Translator - Windows 版本
+cd /d %~dp0
+start "" SkylarkTranslator.exe"
+        
+        # 创建说明文件
+        Set-Content -Path "dist\$packageName\使用说明.txt" -Value "Skylark Screen Translator - Windows 版本
 版本: $version
 类型: $releaseType
 构建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-...
-"@ | Out-File -FilePath "dist\$packageName\使用说明.txt" -Encoding UTF8
+
+== 快速开始 ==
+1. 双击 '启动程序.bat' 或直接运行 SkylarkTranslator.exe
+2. 首次使用请先进入'语言包管理'安装翻译包
+3. 安装完成后重启程序，在设置中选择翻译语言
+
+== 使用说明 ==
+• 左键拖拽: 选择屏幕区域
+• 右键双击: 执行OCR和翻译
+• 左键单击: 显示/隐藏翻译窗口
+• 鼠标滚轮: 滚动翻译内容
+
+== 注意事项 ==
+• 这是未签名的测试版本
+• Windows Defender可能会显示安全警告（正常现象）
+• 需要CPU支持SSE4.1指令集
+• 建议运行内存2GB以上
+
+== 问题反馈 ==
+如遇到问题请到GitHub仓库反馈:
+https://github.com/jtliaw/Skylark-Screen-Translator"
+        
+        # 创建ZIP包
         Compress-Archive -Path "dist\$packageName" -DestinationPath "dist\$packageName.zip" -Force
+        
+        Write-Host "打包完成: $packageName.zip"
+        
+        # 设置输出变量
         echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         echo "PACKAGE_PATH=dist/$packageName.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      shell: powershell
       
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -240,3 +278,25 @@ Skylark Screen Translator - Windows 版本
         name: SkylarkTranslator-Windows-${{ inputs.release_type }}
         path: ${{ env.PACKAGE_PATH }}
         retention-days: 7
+        
+    - name: Create release summary
+      run: |
+        $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
+        $sizeMB = [math]::Round($size/1MB, 2)
+        
+        Write-Host "## 构建完成 ✅" 
+        Write-Host "- 发布类型: ${{ inputs.release_type }}"
+        Write-Host "- 包含调试信息: ${{ inputs.include_debug }}"
+        Write-Host "- 文件大小: ${sizeMB} MB"
+        Write-Host "- 文件名: ${{ env.PACKAGE_NAME }}.zip"
+        Write-Host ""
+        Write-Host "📥 下载构建的文件:"
+        Write-Host "1. 点击上方的 Actions 标签"
+        Write-Host "2. 选择这次运行"
+        Write-Host "3. 在 Artifacts 部分下载 ZIP 文件"
+        Write-Host ""
+        Write-Host "🧪 测试说明:"
+        Write-Host "1. 解压ZIP文件"
+        Write-Host "2. 运行 启动程序.bat 或直接运行 SkylarkTranslator.exe"
+        Write-Host "3. 首次运行需要安装语言包"
+      shell: powershell
