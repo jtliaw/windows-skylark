@@ -71,7 +71,7 @@ jobs:
         }
       shell: powershell
       
-    - name: Create simple launcher script
+    - name: Create launcher script
       shell: powershell
       run: |
         # 创建一个简单的启动器脚本
@@ -93,7 +93,7 @@ jobs:
         $launcherContent += "        sys.exit(1)`r`n"
         
         Set-Content -Path "launcher.py" -Value $launcherContent -Encoding UTF8
-        Write-Host "已创建简单的启动器脚本"
+        Write-Host "已创建启动器脚本"
       
     - name: Build with PyInstaller
       shell: powershell
