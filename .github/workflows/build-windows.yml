@@ -177,7 +177,7 @@ jobs:
           "chcp 65001 > nul",
           "echo Starting Skylark Screen Translator...",
           "cd /d %~dp0",
-          "start \"\" SkylarkTranslator.exe"
+          'start "" SkylarkTranslator.exe'
         )
         $batchLines | Out-File -FilePath "dist\$packageName\start.bat" -Encoding Default
         
