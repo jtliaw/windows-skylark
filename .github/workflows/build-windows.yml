@@ -30,11 +30,26 @@ jobs:
       with:
         python-version: '3.11'
         
-    - name: Install system dependencies
+    - name: Install Tesseract OCR manually
       run: |
-        # 安装 Tesseract OCR
-        choco install tesseract --version=5.3.3 -y
-        echo "C:\Program Files\Tesseract-OCR" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        # 下载并安装 Tesseract OCR
+        $tesseractUrl = "https://github.com/UB-Mannheim/tesseract/wiki"
+        $downloadUrl = "https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.3.20231005.exe"
+        $installerPath = "$env:TEMP\tesseract-installer.exe"
+        
+        Write-Host "下载 Tesseract OCR 安装程序..."
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $installerPath
+        
+        Write-Host "安装 Tesseract OCR..."
+        Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+        
+        # 添加到 PATH
+        $tesseractPath = "C:\Program Files\Tesseract-OCR"
+        if (Test-Path $tesseractPath) {
+          echo "$tesseractPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        } else {
+          Write-Host "警告: Tesseract 安装路径不存在"
+        }
       shell: powershell
       
     - name: Install Python dependencies
