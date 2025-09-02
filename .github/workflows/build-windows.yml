@@ -78,7 +78,6 @@ jobs:
           pyinstaller --name SkylarkTranslator `
             --onedir `  # 关键修改：使用文件夹模式而非单文件模式
             --windowed `
-            --icon icon.ico `  # 如果您有图标文件
             --add-data "C:\Program Files\Tesseract-OCR\tesseract.exe;." `
             --add-data "C:\Program Files\Tesseract-OCR\tessdata;tessdata" `
             --hidden-import PyQt5.QtCore `
@@ -125,43 +124,44 @@ jobs:
           # 创建ZIP包（直接打包整个文件夹）
           Compress-Archive -Path "dist\SkylarkTranslator" -DestinationPath "dist\$packageName.zip" -Force
           
-          # 创建说明文件
-          $readmeContent = @"
-Skylark Screen Translator - Windows Version
-Version: $version
-Type: $releaseType
-Build Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-Application Size: $buildSize MB
-
-== IMPORTANT: FAST STARTUP VERSION ==
-This version uses directory mode instead of single executable mode.
-This means:
-1. FAST startup (no extraction needed)
-2. CLEAR disk usage (all files are visible in the application folder)
-3. EASY to manage and clean up
-
-== How to Use ==
-1. Extract this ZIP file to any folder (e.g., C:\SkylarkTranslator)
-2. Run SkylarkTranslator.exe directly from the extracted folder
-3. No need to use any batch files
-
-== First Time Setup ==
-1. On first run, go to 'Language Pack Management'
-2. Download the translation packages you need
-3. Restart the application after installation
-
-== File Locations ==
-- Main executable: SkylarkTranslator.exe
-- Dependencies: All in the same folder
-- Tesseract data: .\tessdata\
-- Argos Translate data: Will be downloaded to your user AppData folder
-
-== Notes ==
-• This version starts much faster than the single executable version
-• It uses about $buildSize MB of disk space in the installation location
-• To uninstall, simply delete the entire folder
-"@
-          Set-Content -Path "dist\README_$packageName.txt" -Value $readmeContent -Encoding UTF8
+          # 创建说明文件 - 使用安全的方法避免多行字符串问题
+          $readmeLines = @(
+            "Skylark Screen Translator - Windows Version",
+            "Version: $version",
+            "Type: $releaseType",
+            "Build Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+            "Application Size: $buildSize MB",
+            "",
+            "== IMPORTANT: FAST STARTUP VERSION ==",
+            "This version uses directory mode instead of single executable mode.",
+            "This means:",
+            "1. FAST startup (no extraction needed)",
+            "2. CLEAR disk usage (all files are visible in the application folder)",
+            "3. EASY to manage and clean up",
+            "",
+            "== How to Use ==",
+            "1. Extract this ZIP file to any folder (e.g., C:\SkylarkTranslator)",
+            "2. Run SkylarkTranslator.exe directly from the extracted folder",
+            "3. No need to use any batch files",
+            "",
+            "== First Time Setup ==",
+            "1. On first run, go to 'Language Pack Management'",
+            "2. Download the translation packages you need",
+            "3. Restart the application after installation",
+            "",
+            "== File Locations ==",
+            "- Main executable: SkylarkTranslator.exe",
+            "- Dependencies: All in the same folder",
+            "- Tesseract data: .\tessdata\",
+            "- Argos Translate data: Will be downloaded to your user AppData folder",
+            "",
+            "== Notes ==",
+            "• This version starts much faster than the single executable version",
+            "• It uses about $buildSize MB of disk space in the installation location",
+            "• To uninstall, simply delete the entire folder"
+          )
+          
+          $readmeLines | Out-File -Path "dist\README_$packageName.txt" -Encoding UTF8
           
           Write-Host "Package created: dist\$packageName.zip"
           echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -182,18 +182,18 @@ This means:
           $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
           $sizeMB = [math]::Round($size/1MB, 2)
           
-          Write-Host "## 🚀 Build Complete - Fast Startup Edition"
+          Write-Host "## Build Complete - Fast Startup Edition"
           Write-Host "- Release Type: ${{ inputs.release_type }}"
           Write-Host "- Application Size: ${{ env.BUILD_SIZE_MB }} MB"
           Write-Host "- Zip Package Size: ${sizeMB} MB"
           Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
           Write-Host ""
-          Write-Host "## ⚡ Key Improvements"
-          Write-Host "1. **Instant Startup**: No more long extraction waits"
-          Write-Host "2. **Transparent Disk Usage**: All files are visible in the application folder"
-          Write-Host "3. **Easy Management**: Simply delete the folder to uninstall"
+          Write-Host "## Key Improvements"
+          Write-Host "1. Instant Startup: No more long extraction waits"
+          Write-Host "2. Transparent Disk Usage: All files are visible in the application folder"
+          Write-Host "3. Easy Management: Simply delete the folder to uninstall"
           Write-Host ""
-          Write-Host "## 📥 Download & Use"
+          Write-Host "## Download & Use"
           Write-Host "1. Download the ZIP file from Artifacts"
           Write-Host "2. Extract to any folder"
           Write-Host "3. Run SkylarkTranslator.exe directly"
