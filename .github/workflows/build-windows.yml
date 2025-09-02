@@ -70,7 +70,7 @@ jobs:
         New-Item -Path $tessdata -ItemType Directory -Force | Out-Null
         
         # Download necessary language packs
-        $languages = @("eng", "chi_sim", "jpn")
+        $languages = @("eng", "chi_sim", "jpn", "kor", "msa", "ita", "ukr", "ind", "ara", "aze", "cat", "ces", "dan", "nld", "epo", "fra", "deu", "ell", "heb", "hin", "hun", "gle", "fas", "pol", "por", "rus", "slk", "spa", "swe", "tur", "fin")
         
         foreach ($lang in $languages) {
           $url = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$lang.traineddata"
