@@ -159,7 +159,8 @@ jobs:
             "• To uninstall, simply delete the entire folder"
           )
           
-          $readmeLines | Out-File -Path "dist\README_$packageName.txt" -Encoding UTF8
+          # 修复：使用 -FilePath 参数而不是 -Path
+          $readmeLines | Out-File -FilePath "dist\README_$packageName.txt" -Encoding UTF8
           
           Write-Host "Package created: dist\$packageName.zip"
           echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
