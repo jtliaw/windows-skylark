@@ -25,6 +25,12 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: List files in repository
+        run: |
+          Write-Host "Files in repository:"
+          Get-ChildItem -Recurse | Format-Table Name
+        shell: powershell
+
       - name: Install Tesseract OCR
         run: |
           # 下载并安装 Tesseract OCR
@@ -74,9 +80,22 @@ jobs:
         run: |
           Write-Host "Building Skylark Screen Translator in DIRECTORY mode (fast startup)..."
           
+          # 检查主程序文件是否存在
+          if (Test-Path "skylark_screen_translator.py") {
+            Write-Host "Found main program: skylark_screen_translator.py"
+            $mainScript = "skylark_screen_translator.py"
+          } elseif (Test-Path "main.py") {
+            Write-Host "Found main program: main.py"
+            $mainScript = "main.py"
+          } else {
+            Write-Host "Available Python files:"
+            Get-ChildItem *.py | Format-Table Name
+            throw "No main program found. Please check your repository structure."
+          }
+          
           # 使用文件夹模式打包，启动速度更快
-          # 使用单行命令避免续行符问题
-          pyinstaller --name SkylarkTranslator --onedir --windowed --add-data "C:\Program Files\Tesseract-OCR\tesseract.exe;." --add-data "C:\Program Files\Tesseract-OCR\tessdata;tessdata" --hidden-import PyQt5.QtCore --hidden-import PyQt5.QtGui --hidden-import PyQt5.QtWidgets --hidden-import pytesseract --hidden-import PIL --hidden-import mss --hidden-import pynput --hidden-import screeninfo --hidden-import requests --hidden-import argostranslate --hidden-import stanza --hidden-import ctranslate2 --hidden-import sentencepiece --hidden-import numpy --hidden-import cv2 --hidden-import ttkthemes --hidden-import certifi main.py
+          # 使用正确的主程序文件名
+          pyinstaller --name SkylarkTranslator --onedir --windowed --add-data "C:\Program Files\Tesseract-OCR\tesseract.exe;." --add-data "C:\Program Files\Tesseract-OCR\tessdata;tessdata" --hidden-import PyQt5.QtCore --hidden-import PyQt5.QtGui --hidden-import PyQt5.QtWidgets --hidden-import pytesseract --hidden-import PIL --hidden-import mss --hidden-import pynput --hidden-import screeninfo --hidden-import requests --hidden-import argostranslate --hidden-import stanza --hidden-import ctranslate2 --hidden-import sentencepiece --hidden-import numpy --hidden-import cv2 --hidden-import ttkthemes --hidden-import certifi $mainScript
           
           # 检查构建是否成功
           $exePath = "dist\SkylarkTranslator\SkylarkTranslator.exe"
