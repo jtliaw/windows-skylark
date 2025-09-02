@@ -75,29 +75,8 @@ jobs:
           Write-Host "Building Skylark Screen Translator in DIRECTORY mode (fast startup)..."
           
           # 使用文件夹模式打包，启动速度更快
-          pyinstaller --name SkylarkTranslator `
-            --onedir `  # 关键修改：使用文件夹模式而非单文件模式
-            --windowed `
-            --add-data "C:\Program Files\Tesseract-OCR\tesseract.exe;." `
-            --add-data "C:\Program Files\Tesseract-OCR\tessdata;tessdata" `
-            --hidden-import PyQt5.QtCore `
-            --hidden-import PyQt5.QtGui `
-            --hidden-import PyQt5.QtWidgets `
-            --hidden-import pytesseract `
-            --hidden-import PIL `
-            --hidden-import mss `
-            --hidden-import pynput `
-            --hidden-import screeninfo `
-            --hidden-import requests `
-            --hidden-import argostranslate `
-            --hidden-import stanza `
-            --hidden-import ctranslate2 `
-            --hidden-import sentencepiece `
-            --hidden-import numpy `
-            --hidden-import cv2 `
-            --hidden-import ttkthemes `
-            --hidden-import certifi `
-            main.py  # 直接使用您的主文件作为入口
+          # 使用单行命令避免续行符问题
+          pyinstaller --name SkylarkTranslator --onedir --windowed --add-data "C:\Program Files\Tesseract-OCR\tesseract.exe;." --add-data "C:\Program Files\Tesseract-OCR\tessdata;tessdata" --hidden-import PyQt5.QtCore --hidden-import PyQt5.QtGui --hidden-import PyQt5.QtWidgets --hidden-import pytesseract --hidden-import PIL --hidden-import mss --hidden-import pynput --hidden-import screeninfo --hidden-import requests --hidden-import argostranslate --hidden-import stanza --hidden-import ctranslate2 --hidden-import sentencepiece --hidden-import numpy --hidden-import cv2 --hidden-import ttkthemes --hidden-import certifi main.py
           
           # 检查构建是否成功
           $exePath = "dist\SkylarkTranslator\SkylarkTranslator.exe"
