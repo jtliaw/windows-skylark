@@ -140,7 +140,7 @@ jobs:
           $certifiPath = "dist\SkylarkTranslator\certifi"
           if (Test-Path $certifiPath) {
               Write-Host "✓ certifi directory found"
-              Get-ChildItem $certifiPath | Format-Table Name
+              Get-ChildItem -Path $certifiPath | Format-Table Name
           } else {
               Write-Warning "certifi directory not found, trying to manually copy it"
       
@@ -175,14 +175,16 @@ jobs:
                   try {
                       $cacertSource = (python -c "import certifi; print(certifi.where())" | Out-String).Trim()
                       Write-Host "cacertSource: $cacertSource"
-                      if (Test-Path $cacertSource) {
-                          Copy-Item -Path $cacertSource -Destination "dist\SkylarkTranslator\certifi\" -Force
+                      if ($cacertSource -and (Test-Path $cacertSource)) {
+                          New-Item -Path "dist\SkylarkTranslator\certifi" -ItemType Directory -Force | Out-Null
+                          Copy-Item -Path $cacertSource -Destination "dist\SkylarkTranslator\certifi\cacert.pem" -Force
                           Write-Host "✓ Copied cacert.pem from certifi package"
                       } else {
                           Write-Error "Could not find cacert.pem at path: $cacertSource"
                       }
                   } catch {
                       Write-Error "Failed to execute python command to find certifi: $_"
+                      exit 1
                   }
               }
           }
