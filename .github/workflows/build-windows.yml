@@ -58,6 +58,12 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
           pip install pyinstaller==6.2.0
+          pip install certifi==2024.2.2  # 确保 certifi 被安装
+        shell: powershell
+
+      - name: Verify certifi installation
+        run: |
+          python -c "import certifi; print('certifi found at:', certifi.__file__)"
         shell: powershell
 
       - name: Download Tesseract language data
@@ -97,22 +103,20 @@ jobs:
           pyinstaller --name SkylarkTranslator --onedir --windowed `
             --add-data "C:\Program Files\Tesseract-OCR\tesseract.exe;." `
             --add-data "C:\Program Files\Tesseract-OCR\tessdata;tessdata" `
-            --hidden-import PyQt5.QtCore `
-            --hidden-import PyQt5.QtGui `
-            --hidden-import PyQt5.QtWidgets `
-            --hidden-import pytesseract `
-            --hidden-import PIL `
-            --hidden-import mss `
-            --hidden-import pynput `
-            --hidden-import screeninfo `
-            --hidden-import requests `
-            --hidden-import argostranslate `
-            --hidden-import stanza `
-            --hidden-import ctranslate2 `
-            --hidden-import sentencepiece `
-            --hidden-import numpy `
-            --hidden-import cv2 `
-            --hidden-import ttkthemes `
+            --collect-all PyQt5 `
+            --collect-all pytesseract `
+            --collect-all PIL `
+            --collect-all mss `
+            --collect-all pynput `
+            --collect-all screeninfo `
+            --collect-all requests `
+            --collect-all argostranslate `
+            --collect-all stanza `
+            --collect-all ctranslate2 `
+            --collect-all sentencepiece `
+            --collect-all numpy `
+            --collect-all opencv-python `
+            --collect-all ttkthemes `
             --collect-all certifi `
             $mainScript
           
@@ -125,6 +129,58 @@ jobs:
               echo "BUILD_SIZE_MB=$sizeMB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } else {
               throw "Build failed: executable file not found"
+          }
+
+      - name: Verify certifi in build
+        shell: powershell
+        run: |
+          Write-Host "Checking if certifi is included in the build..."
+          
+          # 检查 certifi 目录是否存在
+          $certifiPath = "dist\SkylarkTranslator\certifi"
+          if (Test-Path $certifiPath) {
+              Write-Host "✓ certifi directory found"
+              Get-ChildItem $certifiPath | Format-Table Name
+          } else {
+              Write-Warning "certifi directory not found, trying to manually copy it"
+              
+              # 尝试手动复制 certifi
+              $pythonPath = (Get-Command python).Source
+              $pythonDir = Split-Path $pythonPath -Parent
+              $sitePackages = Join-Path $pythonDir "Lib\site-packages\certifi"
+              
+              if (Test-Path $sitePackages) {
+                  Copy-Item -Path $sitePackages -Destination "dist\SkylarkTranslator\" -Recurse -Force
+                  Write-Host "✓ Manually copied certifi to build directory"
+              } else {
+                  Write-Error "Could not find certifi in Python site-packages"
+              }
+          }
+          
+          # 检查 cacert.pem 文件
+          $cacertPath = "dist\SkylarkTranslator\certifi\cacert.pem"
+          if (Test-Path $cacertPath) {
+              Write-Host "✓ cacert.pem file found"
+          } else {
+              Write-Warning "cacert.pem not found, trying to locate it"
+              
+              # 尝试找到并复制 cacert.pem
+              $cacertSearch = Get-ChildItem -Path "C:\" -Name "cacert.pem" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($cacertSearch) {
+                  $fullPath = Join-Path "C:\" $cacertSearch
+                  Copy-Item -Path $fullPath -Destination "dist\SkylarkTranslator\certifi\" -Force
+                  Write-Host "✓ Manually copied cacert.pem to build directory"
+              } else {
+                  # 如果找不到，尝试从 certifi 包中获取
+                  python -c "import certifi; print(certifi.where())" | Out-File -FilePath "$env:TEMP\cacert_path.txt"
+                  $cacertSource = Get-Content "$env:TEMP\cacert_path.txt"
+                  if (Test-Path $cacertSource) {
+                      Copy-Item -Path $cacertSource -Destination "dist\SkylarkTranslator\certifi\" -Force
+                      Write-Host "✓ Copied cacert.pem from certifi package"
+                  } else {
+                      Write-Error "Could not find cacert.pem anywhere"
+                  }
+              }
           }
         
       - name: Create distribution package
@@ -141,7 +197,7 @@ jobs:
           # 创建ZIP包（直接打包整个文件夹）
           Compress-Archive -Path "dist\SkylarkTranslator" -DestinationPath "dist\$packageName.zip" -Force
           
-          # 创建说明文件 - 使用安全的方法避免多行字符串问题
+          # 创建说明文件
           $readmeLines = @(
             "Skylark Screen Translator - Windows Version",
             "Version: $version",
@@ -178,7 +234,6 @@ jobs:
             "• To uninstall, simply delete the entire folder"
           )
           
-          # 修复：使用 -FilePath 参数而不是 -Path
           $readmeLines | Out-File -FilePath "dist\README_$packageName.txt" -Encoding UTF8
           
           Write-Host "Package created: dist\$packageName.zip"
