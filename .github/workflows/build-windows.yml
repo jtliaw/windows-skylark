@@ -172,12 +172,17 @@ jobs:
                   Write-Host "✓ Manually copied cacert.pem to build directory"
               } else {
                   # 如果找不到，尝试从 certifi 包中获取
-                  $cacertSource = $(python -c "import certifi; print(certifi.where())")
-                  if (Test-Path $cacertSource) {
-                      Copy-Item -Path $cacertSource -Destination "dist\SkylarkTranslator\certifi\" -Force
-                      Write-Host "✓ Copied cacert.pem from certifi package"
-                  } else {
-                      Write-Error "Could not find cacert.pem anywhere"
+                  try {
+                      $cacertSource = (python -c "import certifi; print(certifi.where())" | Out-String).Trim()
+                      Write-Host "cacertSource: $cacertSource"
+                      if (Test-Path $cacertSource) {
+                          Copy-Item -Path $cacertSource -Destination "dist\SkylarkTranslator\certifi\" -Force
+                          Write-Host "✓ Copied cacert.pem from certifi package"
+                      } else {
+                          Write-Error "Could not find cacert.pem at path: $cacertSource"
+                      }
+                  } catch {
+                      Write-Error "Failed to execute python command to find certifi: $_"
                   }
               }
           }
