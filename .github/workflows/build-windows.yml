@@ -56,7 +56,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
-          pip install pytesseract
+          pip install pytesseract  # 添加这一行
           pip install pyinstaller==6.2.0
           pip install certifi==2024.2.2
 
@@ -100,7 +100,7 @@ jobs:
           pyinstaller --name SkylarkTranslator --onedir --windowed `
             --add-data 'C:\Program Files\Tesseract-OCR\tesseract.exe;.' `
             --add-data 'C:\Program Files\Tesseract-OCR\tessdata;tessdata' `
-            --hidden-import pytesseract
+            --hidden-import pytesseract `  # 这里添加了反引号
             --collect-all PyQt5 `
             --collect-all pytesseract `
             --collect-all PIL `
@@ -126,6 +126,25 @@ jobs:
               echo "BUILD_SIZE_MB=$sizeMB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } else {
               throw 'Build failed: executable file not found'
+          }
+
+      - name: Verify pytesseract inclusion
+        shell: powershell
+        run: |
+          Write-Host "Checking if pytesseract is included in the build..."
+          if (Test-Path 'dist\SkylarkTranslator\pytesseract') {
+              Write-Host '✓ pytesseract module found in build'
+          } else {
+              Write-Warning 'pytesseract module not found in build directory'
+              # 尝试手动复制
+              $pytesseractPath = python -c "import pytesseract; print(pytesseract.__file__)" 2>$null
+              if ($pytesseractPath) {
+                  $pytesseractDir = Split-Path $pytesseractPath -Parent
+                  Copy-Item -Path $pytesseractDir -Destination 'dist\SkylarkTranslator\' -Recurse -Force
+                  Write-Host '✓ Manually copied pytesseract to build directory'
+              } else {
+                  Write-Error 'Could not find pytesseract module location'
+              }
           }
 
       - name: Debug certifi path
@@ -223,25 +242,6 @@ jobs:
             ${{ env.PACKAGE_PATH }}
             dist/README_${{ env.PACKAGE_NAME }}.txt
           retention-days: 7
-
-      - name: Verify pytesseract inclusion
-        shell: powershell
-        run: |
-          Write-Host "Checking if pytesseract is included in the build..."
-          if (Test-Path 'dist\SkylarkTranslator\pytesseract') {
-              Write-Host '✓ pytesseract module found in build'
-          } else {
-              Write-Warning 'pytesseract module not found in build directory'
-              # 尝试手动复制
-              $pytesseractPath = python -c "import pytesseract; print(pytesseract.__file__)" 2>$null
-              if ($pytesseractPath) {
-                  $pytesseractDir = Split-Path $pytesseractPath -Parent
-                  Copy-Item -Path $pytesseractDir -Destination 'dist\SkylarkTranslator\' -Recurse -Force
-                  Write-Host '✓ Manually copied pytesseract to build directory'
-              } else {
-                  Write-Error 'Could not find pytesseract module location'
-              }
-          }
 
       - name: Create build summary
         shell: powershell
