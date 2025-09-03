@@ -94,8 +94,27 @@ jobs:
           }
           
           # 使用文件夹模式打包，启动速度更快
-          # 使用正确的主程序文件名
-          pyinstaller --name SkylarkTranslator --onedir --windowed --add-data "C:\Program Files\Tesseract-OCR\tesseract.exe;." --add-data "C:\Program Files\Tesseract-OCR\tessdata;tessdata" --hidden-import PyQt5.QtCore --hidden-import PyQt5.QtGui --hidden-import PyQt5.QtWidgets --hidden-import pytesseract --hidden-import PIL --hidden-import mss --hidden-import pynput --hidden-import screeninfo --hidden-import requests --hidden-import argostranslate --hidden-import stanza --hidden-import ctranslate2 --hidden-import sentencepiece --hidden-import numpy --hidden-import cv2 --hidden-import ttkthemes --hidden-import certifi $mainScript
+          pyinstaller --name SkylarkTranslator --onedir --windowed `
+            --add-data "C:\Program Files\Tesseract-OCR\tesseract.exe;." `
+            --add-data "C:\Program Files\Tesseract-OCR\tessdata;tessdata" `
+            --hidden-import PyQt5.QtCore `
+            --hidden-import PyQt5.QtGui `
+            --hidden-import PyQt5.QtWidgets `
+            --hidden-import pytesseract `
+            --hidden-import PIL `
+            --hidden-import mss `
+            --hidden-import pynput `
+            --hidden-import screeninfo `
+            --hidden-import requests `
+            --hidden-import argostranslate `
+            --hidden-import stanza `
+            --hidden-import ctranslate2 `
+            --hidden-import sentencepiece `
+            --hidden-import numpy `
+            --hidden-import cv2 `
+            --hidden-import ttkthemes `
+            --collect-all certifi `
+            $mainScript
           
           # 检查构建是否成功
           $exePath = "dist\SkylarkTranslator\SkylarkTranslator.exe"
