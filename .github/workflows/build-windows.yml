@@ -26,12 +26,13 @@ jobs:
           python-version: '3.11'
 
       - name: List files in repository
+        shell: powershell
         run: |
           Write-Host "Files in repository:"
           Get-ChildItem -Recurse | Format-Table Name
-        shell: powershell
 
       - name: Install Tesseract OCR
+        shell: powershell
         run: |
           # 下载并安装 Tesseract OCR
           $downloadUrl = "https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.3.20231005.exe"
@@ -51,22 +52,22 @@ jobs:
               Write-Error "Tesseract installation failed"
               exit 1
           }
-        shell: powershell
 
       - name: Install Python dependencies
+        shell: powershell
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
           pip install pyinstaller==6.2.0
           pip install certifi==2024.2.2  # 确保 certifi 被安装
-        shell: powershell
 
       - name: Verify certifi installation
+        shell: powershell
         run: |
           python -c "import certifi; print('certifi found at:', certifi.__file__)"
-        shell: powershell
 
       - name: Download Tesseract language data
+        shell: powershell
         run: |
           $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
           New-Item -Path $tessdata -ItemType Directory -Force | Out-Null
@@ -79,7 +80,6 @@ jobs:
             Invoke-WebRequest -Uri $url -OutFile $output
           }
           Write-Host "Language packs installed"
-        shell: powershell
 
       - name: Build with PyInstaller (Directory Mode)
         shell: powershell
@@ -130,32 +130,32 @@ jobs:
           } else {
               throw "Build failed: executable file not found"
           }
-      
+
       - name: Verify certifi in build
         shell: powershell
         run: |
           Write-Host "Checking if certifi is included in the build..."
-      
+
           # 检查 cacert.pem 文件
           $cacertPath = "dist\SkylarkTranslator\certifi\cacert.pem"
           if (Test-Path $cacertPath) {
               Write-Host "✓ cacert.pem file found"
           } else {
               Write-Warning "cacert.pem not found, trying to copy it"
-      
+
               # 直接使用已知的 certifi 路径
-              $cacartSource = Join-Path $env:pythonLocation "Lib\site-packages\certifi\cacert.pem"
-              Write-Host "cacartSource: $cacartSource"
-              if ($cacartSource -and (Test-Path $cacartSource)) {
+              $cacertSource = Join-Path $env:pythonLocation "Lib\site-packages\certifi\cacert.pem"
+              Write-Host ("cacertSource: " + $cacertSource)
+              if ($cacertSource -and (Test-Path $cacertSource)) {
                   New-Item -Path "dist\SkylarkTranslator\certifi" -ItemType Directory -Force | Out-Null
-                  Copy-Item -Path $cacartSource -Destination "dist\SkylarkTranslator\certifi\cacert.pem" -Force
+                  Copy-Item -Path $cacertSource -Destination "dist\SkylarkTranslator\certifi\cacert.pem" -Force
                   Write-Host "✓ Copied cacert.pem from certifi package"
               } else {
-                  Write-Error "Could not find cacert.pem at path: $cacartSource"
+                  Write-Error ("Could not find cacert.pem at path: " + $cacertSource)
                   exit 1
               }
           }
-        
+
       - name: Create distribution package
         shell: powershell
         run: |
@@ -212,7 +212,7 @@ jobs:
           Write-Host "Package created: dist\$packageName.zip"
           echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "PACKAGE_PATH=dist/$packageName.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
