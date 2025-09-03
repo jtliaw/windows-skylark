@@ -56,7 +56,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
-          pip install pytesseract  # 添加这一行
+          pip install pytesseract
           pip install pyinstaller==6.2.0
           pip install certifi==2024.2.2
 
@@ -97,26 +97,34 @@ jobs:
             throw 'No main program found. Please check your repository structure.'
           }
           
-          pyinstaller --name SkylarkTranslator --onedir --windowed `
-            --add-data 'C:\Program Files\Tesseract-OCR\tesseract.exe;.' `
-            --add-data 'C:\Program Files\Tesseract-OCR\tessdata;tessdata' `
-            --hidden-import pytesseract `  # 这里添加了反引号
-            --collect-all PyQt5 `
-            --collect-all pytesseract `
-            --collect-all PIL `
-            --collect-all mss `
-            --collect-all pynput `
-            --collect-all screeninfo `
-            --collect-all requests `
-            --collect-all argostranslate `
-            --collect-all stanza `
-            --collect-all ctranslate2 `
-            --collect-all sentencepiece `
-            --collect-all numpy `
-            --collect-all opencv-python `
-            --collect-all ttkthemes `
-            --collect-all certifi `
-            $mainScript
+          # 使用数组来构建PyInstaller参数，避免多行反引号问题
+          $pyinstallerArgs = @(
+              "--name", "SkylarkTranslator",
+              "--onedir",
+              "--windowed",
+              "--add-data", "C:\Program Files\Tesseract-OCR\tesseract.exe;.",
+              "--add-data", "C:\Program Files\Tesseract-OCR\tessdata;tessdata",
+              "--hidden-import", "pytesseract",
+              "--collect-all", "PyQt5",
+              "--collect-all", "pytesseract",
+              "--collect-all", "PIL",
+              "--collect-all", "mss",
+              "--collect-all", "pynput",
+              "--collect-all", "screeninfo",
+              "--collect-all", "requests",
+              "--collect-all", "argostranslate",
+              "--collect-all", "stanza",
+              "--collect-all", "ctranslate2",
+              "--collect-all", "sentencepiece",
+              "--collect-all", "numpy",
+              "--collect-all", "opencv-python",
+              "--collect-all", "ttkthemes",
+              "--collect-all", "certifi",
+              $mainScript
+          )
+          
+          # 执行PyInstaller命令
+          pyinstaller @pyinstallerArgs
           
           $exePath = 'dist\SkylarkTranslator\SkylarkTranslator.exe'
           if (Test-Path $exePath) {
