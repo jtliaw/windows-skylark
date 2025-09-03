@@ -145,13 +145,13 @@ jobs:
 
               # 直接使用已知的 certifi 路径
               $cacertSource = Join-Path $env:pythonLocation "Lib\site-packages\certifi\cacert.pem"
-              Write-Host ("cacertSource: " + $cacertSource)
+              Write-Host "cacertSource: $cacertSource"
               if ($cacertSource -and (Test-Path $cacertSource)) {
                   New-Item -Path "dist\SkylarkTranslator\certifi" -ItemType Directory -Force | Out-Null
                   Copy-Item -Path $cacertSource -Destination "dist\SkylarkTranslator\certifi\cacert.pem" -Force
                   Write-Host "✓ Copied cacert.pem from certifi package"
               } else {
-                  Write-Error ("Could not find cacert.pem at path: " + $cacertSource)
+                  Write-Error "Could not find cacert.pem at path: $cacertSource"
                   exit 1
               }
           }
