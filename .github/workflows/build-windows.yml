@@ -135,7 +135,7 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Checking if certifi is included in the build..."
-    
+          
           # 检查 certifi 目录是否存在
           $certifiPath = "dist\SkylarkTranslator\certifi"
           if (Test-Path $certifiPath) {
@@ -143,12 +143,12 @@ jobs:
               Get-ChildItem $certifiPath | Format-Table Name
           } else {
               Write-Warning "certifi directory not found, trying to manually copy it"
-        
+              
               # 尝试手动复制 certifi
               $pythonPath = (Get-Command python).Source
               $pythonDir = Split-Path $pythonPath -Parent
               $sitePackages = Join-Path $pythonDir "Lib\site-packages\certifi"
-        
+              
               if (Test-Path $sitePackages) {
                   Copy-Item -Path $sitePackages -Destination "dist\SkylarkTranslator\" -Recurse -Force
                   Write-Host "✓ Manually copied certifi to build directory"
@@ -156,31 +156,31 @@ jobs:
                   Write-Error "Could not find certifi in Python site-packages"
               }
           }
-    
-    # 检查 cacert.pem 文件
-    $cacertPath = "dist\SkylarkTranslator\certifi\cacert.pem"
-    if (Test-Path $cacertPath) {
-        Write-Host "✓ cacert.pem file found"
-    } else {
-        Write-Warning "cacert.pem not found, trying to locate it"
-        
-        # 尝试找到并复制 cacert.pem
-        $cacertSearch = Get-ChildItem -Path "C:\" -Name "cacert.pem" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($cacertSearch) {
-            $fullPath = Join-Path "C:\" $cacertSearch
-            Copy-Item -Path $fullPath -Destination "dist\SkylarkTranslator\certifi\" -Force
-            Write-Host "✓ Manually copied cacert.pem to build directory"
-        } else {
-            # 如果找不到，尝试从 certifi 包中获取
-            $cacertSource = python -c "import certifi; print(certifi.where())"
-            if (Test-Path $cacertSource) {
-                Copy-Item -Path $cacertSource -Destination "dist\SkylarkTranslator\certifi\" -Force
-                Write-Host "✓ Copied cacert.pem from certifi package"
-            } else {
-                Write-Error "Could not find cacert.pem anywhere"
-            }
-        }
-    }
+          
+          # 检查 cacert.pem 文件
+          $cacertPath = "dist\SkylarkTranslator\certifi\cacert.pem"
+          if (Test-Path $cacertPath) {
+              Write-Host "✓ cacert.pem file found"
+          } else {
+              Write-Warning "cacert.pem not found, trying to locate it"
+              
+              # 尝试找到并复制 cacert.pem
+              $cacertSearch = Get-ChildItem -Path "C:\" -Name "cacert.pem" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($cacertSearch) {
+                  $fullPath = Join-Path "C:\" $cacertSearch
+                  Copy-Item -Path $fullPath -Destination "dist\SkylarkTranslator\certifi\" -Force
+                  Write-Host "✓ Manually copied cacert.pem to build directory"
+              } else {
+                  # 如果找不到，尝试从 certifi 包中获取
+                  $cacertSource = python -c "import certifi; print(certifi.where())"
+                  if (Test-Path $cacertSource) {
+                      Copy-Item -Path $cacertSource -Destination "dist\SkylarkTranslator\certifi\" -Force
+                      Write-Host "✓ Copied cacert.pem from certifi package"
+                  } else {
+                      Write-Error "Could not find cacert.pem anywhere"
+                  }
+              }
+          }
         
       - name: Create distribution package
         shell: powershell
