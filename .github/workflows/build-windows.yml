@@ -68,11 +68,11 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Verifying all required modules are installed..."
-          $modules = @("sys", "os", "certifi", "time", "re", "queue", "threading", "pytesseract", "PIL", "numpy", "subprocess", "platform", "shutil", "requests", "json", "math", "cv2", "socket", "datetime", "threading", "online_translator")
+          $modules = @("sys", "os", "certifi", "time", "re", "queue", "threading", "pytesseract", "PIL", "numpy", "subprocess", "platform", "shutil", "requests", "json", "math", "cv2", "socket", "datetime", "online_translator")
           
           foreach ($module in $modules) {
             try {
-              python -c "import $module; print('✓ $module imported successfully')"
+              python -c "import $module; print('$module imported successfully')"
             } catch {
               Write-Warning "Failed to import $module"
             }
