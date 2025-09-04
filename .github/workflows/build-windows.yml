@@ -56,26 +56,28 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
+          pip install PyQt5  # 确保安装PyQt5
           pip install pytesseract
-          pip install numpy  # 确保安装numpy
-          pip install opencv-python  # 确保安装opencv-python
-          pip install pillow  # 确保安装PIL
-          pip install certifi  # 确保安装certifi
-          pip install requests  # 确保安装requests
+          pip install numpy
+          pip install opencv-python
+          pip install pillow
+          pip install certifi
+          pip install requests
           pip install pyinstaller==6.2.0
 
       - name: Verify all required modules
         shell: powershell
         run: |
           Write-Host "Verifying all required modules are installed..."
-          $modules = @("sys", "os", "certifi", "time", "re", "queue", "threading", "pytesseract", "PIL", "numpy", "subprocess", "platform", "shutil", "requests", "json", "math", "cv2", "socket", "datetime", "online_translator")
+          $modules = @("sys", "os", "certifi", "time", "re", "queue", "threading", "pytesseract", "PIL", "numpy", "subprocess", "platform", "shutil", "requests", "json", "math", "cv2", "socket", "datetime", "PyQt5", "online_translator")
           
           foreach ($module in $modules) {
-            try {
-              python -c "import $module; print('$module imported successfully')"
-            } catch {
-              Write-Warning "Failed to import $module"
-            }
+              $modulePath = python -c "import $module; print('$module imported successfully')" 2>$null
+              if ($LASTEXITCODE -eq 0) {
+                  Write-Host "OK: $module imported successfully"
+              } else {
+                  Write-Warning "Failed to import $module"
+              }
           }
 
       - name: Download Tesseract language data
@@ -118,12 +120,16 @@ jobs:
               "--add-data", "C:\Program Files\Tesseract-OCR\tesseract.exe;.",
               "--add-data", "C:\Program Files\Tesseract-OCR\tessdata;tessdata",
               "--hidden-import", "pytesseract",
-              "--hidden-import", "numpy",  # 确保numpy被包含
-              "--hidden-import", "cv2",    # 确保opencv-python被包含
-              "--hidden-import", "PIL",    # 确保PIL被包含
-              "--hidden-import", "certifi", # 确保certifi被包含
-              "--hidden-import", "requests", # 确保requests被包含
-              "--hidden-import", "online_translator", # 确保online_translator被包含
+              "--hidden-import", "numpy",
+              "--hidden-import", "cv2",
+              "--hidden-import", "PIL",
+              "--hidden-import", "certifi",
+              "--hidden-import", "requests",
+              "--hidden-import", "online_translator",
+              "--hidden-import", "PyQt5",  # 添加PyQt5隐藏导入
+              "--hidden-import", "PyQt5.QtCore",  # 添加PyQt5子模块
+              "--hidden-import", "PyQt5.QtGui",  # 添加PyQt5子模块
+              "--hidden-import", "PyQt5.QtWidgets",  # 添加PyQt5子模块
               "--collect-all", "PyQt5",
               "--collect-all", "pytesseract",
               "--collect-all", "PIL",
@@ -160,24 +166,33 @@ jobs:
         run: |
           Write-Host "Checking if all required modules are included in the build..."
           
-          $modulesToCheck = @("numpy", "cv2", "PIL", "certifi", "requests", "pytesseract")
+          $modulesToCheck = @("numpy", "cv2", "PIL", "certifi", "requests", "pytesseract", "PyQt5")
           
           foreach ($module in $modulesToCheck) {
-              if (Test-Path "dist\SkylarkTranslator\$module") {
-                  Write-Host "$module found in build"
-              } else {
-                  Write-Warning "$module not found in build directory"
-                  # 尝试手动复制
-                  $modulePath = python -c "import $module; print($module.__file__)" 2>$null
-                  if ($LASTEXITCODE -eq 0 -and $modulePath) {
-                      $moduleDir = Split-Path $modulePath -Parent
-                      Copy-Item -Path $moduleDir -Destination "dist\SkylarkTranslator\" -Recurse -Force
-                      Write-Host "Manually copied $module to build directory"
-                  } else {
-                      Write-Error "Could not find $module module location"
-                  }
-              }
+            if (Test-Path "dist\SkylarkTranslator\$module") {
+                Write-Host "OK: $module found in build"
+            } else {
+                Write-Warning "$module not found in build directory"
+                # 尝试手动复制
+                $modulePath = python -c "import $module; print($module.__file__)" 2>$null
+                if ($LASTEXITCODE -eq 0 -and $modulePath) {
+                    $moduleDir = Split-Path $modulePath -Parent
+                    Copy-Item -Path $moduleDir -Destination "dist\SkylarkTranslator\" -Recurse -Force
+                    Write-Host "Manually copied $module to build directory"
+                } else {
+                    Write-Error "Could not find $module module location"
+                }
+            }
           }
+
+      - name: Debug PyQt5 installation
+        shell: powershell
+        run: |
+          Write-Host "Debugging PyQt5 installation..."
+          python -c "import PyQt5; print('PyQt5 path:', PyQt5.__file__)"
+          python -c "import PyQt5.QtCore; print('QtCore path:', PyQt5.QtCore.__file__)"
+          python -c "import PyQt5.QtGui; print('QtGui path:', PyQt5.QtGui.__file__)"
+          python -c "import PyQt5.QtWidgets; print('QtWidgets path:', PyQt5.QtWidgets.__file__)"
 
       - name: Debug certifi path
         shell: powershell
@@ -186,7 +201,7 @@ jobs:
           $cacertSource = Join-Path $env:pythonLocation 'Lib\site-packages\certifi\cacert.pem'
           Write-Host ('cacertSource: ' + $cacertSource)
           if (Test-Path $cacertSource) {
-              Write-Host ('✓ cacert.pem exists at ' + $cacertSource)
+              Write-Host ('OK: cacert.pem exists at ' + $cacertSource)
           } else {
               throw ('cacert.pem not found at ' + $cacertSource)
           }
@@ -197,7 +212,7 @@ jobs:
           Write-Host 'Checking if certifi is included in the build...'
           $cacertPath = 'dist\SkylarkTranslator\certifi\cacert.pem'
           if (Test-Path $cacertPath) {
-              Write-Host '✓ cacert.pem file found'
+              Write-Host 'OK: cacert.pem file found'
           } else {
               Write-Warning 'cacert.pem not found, trying to copy it'
               $cacertSource = Join-Path $env:pythonLocation 'Lib\site-packages\certifi\cacert.pem'
@@ -205,7 +220,7 @@ jobs:
               if ($cacertSource -and (Test-Path $cacertSource)) {
                   New-Item -Path 'dist\SkylarkTranslator\certifi' -ItemType Directory -Force | Out-Null
                   Copy-Item -Path $cacertSource -Destination 'dist\SkylarkTranslator\certifi\cacert.pem' -Force
-                  Write-Host '✓ Copied cacert.pem from certifi package'
+                  Write-Host 'Copied cacert.pem from certifi package'
               } else {
                   throw ('Could not find cacert.pem at path: ' + $cacertSource)
               }
