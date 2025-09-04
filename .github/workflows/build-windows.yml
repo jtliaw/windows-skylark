@@ -57,13 +57,26 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
           pip install pytesseract
+          pip install numpy  # 确保安装numpy
+          pip install opencv-python  # 确保安装opencv-python
+          pip install pillow  # 确保安装PIL
+          pip install certifi  # 确保安装certifi
+          pip install requests  # 确保安装requests
           pip install pyinstaller==6.2.0
-          pip install certifi==2024.2.2
 
-      - name: Verify certifi installation
+      - name: Verify all required modules
         shell: powershell
         run: |
-          python -c "import certifi; print('certifi found at:', certifi.__file__)"
+          Write-Host "Verifying all required modules are installed..."
+          $modules = @("sys", "os", "certifi", "time", "re", "queue", "threading", "pytesseract", "PIL", "numpy", "subprocess", "platform", "shutil", "requests", "json", "math", "cv2", "socket", "datetime", "threading", "online_translator")
+          
+          foreach ($module in $modules) {
+            try {
+              python -c "import $module; print('✓ $module imported successfully')"
+            } catch {
+              Write-Warning "Failed to import $module"
+            }
+          }
 
       - name: Download Tesseract language data
         shell: powershell
@@ -97,7 +110,7 @@ jobs:
             throw 'No main program found. Please check your repository structure.'
           }
           
-          # 使用数组来构建PyInstaller参数，避免多行反引号问题
+          # 使用数组来构建PyInstaller参数，确保所有模块都被包含
           $pyinstallerArgs = @(
               "--name", "SkylarkTranslator",
               "--onedir",
@@ -105,21 +118,27 @@ jobs:
               "--add-data", "C:\Program Files\Tesseract-OCR\tesseract.exe;.",
               "--add-data", "C:\Program Files\Tesseract-OCR\tessdata;tessdata",
               "--hidden-import", "pytesseract",
+              "--hidden-import", "numpy",  # 确保numpy被包含
+              "--hidden-import", "cv2",    # 确保opencv-python被包含
+              "--hidden-import", "PIL",    # 确保PIL被包含
+              "--hidden-import", "certifi", # 确保certifi被包含
+              "--hidden-import", "requests", # 确保requests被包含
+              "--hidden-import", "online_translator", # 确保online_translator被包含
               "--collect-all", "PyQt5",
               "--collect-all", "pytesseract",
               "--collect-all", "PIL",
+              "--collect-all", "numpy",
+              "--collect-all", "opencv-python",
+              "--collect-all", "certifi",
+              "--collect-all", "requests",
               "--collect-all", "mss",
               "--collect-all", "pynput",
               "--collect-all", "screeninfo",
-              "--collect-all", "requests",
               "--collect-all", "argostranslate",
               "--collect-all", "stanza",
               "--collect-all", "ctranslate2",
               "--collect-all", "sentencepiece",
-              "--collect-all", "numpy",
-              "--collect-all", "opencv-python",
               "--collect-all", "ttkthemes",
-              "--collect-all", "certifi",
               $mainScript
           )
           
@@ -136,23 +155,32 @@ jobs:
               throw 'Build failed: executable file not found'
           }
 
-      - name: Verify pytesseract inclusion
+      - name: Verify all modules inclusion
         shell: powershell
         run: |
-          Write-Host "Checking if pytesseract is included in the build..."
-          if (Test-Path 'dist\SkylarkTranslator\pytesseract') {
-              Write-Host '✓ pytesseract module found in build'
-          } else {
-              Write-Warning 'pytesseract module not found in build directory'
-              # 尝试手动复制
-              $pytesseractPath = python -c "import pytesseract; print(pytesseract.__file__)" 2>$null
-              if ($pytesseractPath) {
-                  $pytesseractDir = Split-Path $pytesseractPath -Parent
-                  Copy-Item -Path $pytesseractDir -Destination 'dist\SkylarkTranslator\' -Recurse -Force
-                  Write-Host '✓ Manually copied pytesseract to build directory'
-              } else {
-                  Write-Error 'Could not find pytesseract module location'
-              }
+          Write-Host "Checking if all required modules are included in the build..."
+          
+          $modulesToCheck = @("numpy", "cv2", "PIL", "certifi", "requests", "pytesseract")
+          
+          foreach ($module in $modulesToCheck) {
+            if (Test-Path "dist\SkylarkTranslator\$module") {
+                Write-Host "✓ $module found in build"
+            } else {
+                Write-Warning "$module not found in build directory"
+                # 尝试手动复制
+                try {
+                    $modulePath = python -c "import $module; print($module.__file__)" 2>$null
+                    if ($modulePath) {
+                        $moduleDir = Split-Path $modulePath -Parent
+                        Copy-Item -Path $moduleDir -Destination "dist\SkylarkTranslator\" -Recurse -Force
+                        Write-Host "✓ Manually copied $module to build directory"
+                    } else {
+                        Write-Error "Could not find $module module location"
+                    }
+                } catch {
+                    Write-Error "Failed to manually copy $module: $($_.Exception.Message)"
+                }
+            }
           }
 
       - name: Debug certifi path
