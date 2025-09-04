@@ -178,7 +178,7 @@ jobs:
                         Write-Error "Could not find $module module location"
                     }
                 } catch {
-                    Write-Error "Failed to manually copy $module: $($_.Exception.Message)"
+                    Write-Error "Failed to manually copy $module - $($_.Exception.Message)"
                 }
             }
           }
