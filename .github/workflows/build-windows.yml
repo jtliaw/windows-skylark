@@ -163,24 +163,20 @@ jobs:
           $modulesToCheck = @("numpy", "cv2", "PIL", "certifi", "requests", "pytesseract")
           
           foreach ($module in $modulesToCheck) {
-            if (Test-Path "dist\SkylarkTranslator\$module") {
-                Write-Host "✓ $module found in build"
-            } else {
-                Write-Warning "$module not found in build directory"
-                # 尝试手动复制
-                try {
-                    $modulePath = python -c "import $module; print($module.__file__)" 2>$null
-                    if ($modulePath) {
-                        $moduleDir = Split-Path $modulePath -Parent
-                        Copy-Item -Path $moduleDir -Destination "dist\SkylarkTranslator\" -Recurse -Force
-                        Write-Host "✓ Manually copied $module to build directory"
-                    } else {
-                        Write-Error "Could not find $module module location"
-                    }
-                } catch {
-                    Write-Error "Failed to manually copy $module - $($_.Exception.Message)"
-                }
-            }
+              if (Test-Path "dist\SkylarkTranslator\$module") {
+                  Write-Host "$module found in build"
+              } else {
+                  Write-Warning "$module not found in build directory"
+                  # 尝试手动复制
+                  $modulePath = python -c "import $module; print($module.__file__)" 2>$null
+                  if ($LASTEXITCODE -eq 0 -and $modulePath) {
+                      $moduleDir = Split-Path $modulePath -Parent
+                      Copy-Item -Path $moduleDir -Destination "dist\SkylarkTranslator\" -Recurse -Force
+                      Write-Host "Manually copied $module to build directory"
+                  } else {
+                      Write-Error "Could not find $module module location"
+                  }
+              }
           }
 
       - name: Debug certifi path
