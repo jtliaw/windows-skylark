@@ -88,20 +88,20 @@ jobs:
         run: |
           # 创建一个简化的 argostranslate 包装器，避免使用 stanza
           $argosWrapper = @'
-try:
-    # 尝试导入 argostranslate，但如果失败则提供降级功能
-    import argostranslate
-    from argostranslate import translate, package
-except ImportError as e:
-    print(f"Argos Translate not available: {e}")
-    # 创建虚拟实现
-    class DummyTranslator:
-        def translate(self, text):
+          try:
+          # 尝试导入 argostranslate，但如果失败则提供降级功能
+          import argostranslate
+          from argostranslate import translate, package
+          except ImportError as e:
+          print(f"Argos Translate not available: {e}")
+          # 创建虚拟实现
+          class DummyTranslator:
+          def translate(self, text):
             return f"[Translation not available: {text}]"
     
-    translate = type('translate', (), {'Translator': DummyTranslator})()
-    package = type('package', (), {})()
-'@
+          translate = type('translate', (), {'Translator': DummyTranslator})()
+          package = type('package', (), {})()
+          '@
           $argosWrapper | Out-File -FilePath "argos_wrapper.py" -Encoding utf8
           Write-Host "Created simplified argostranslate wrapper"
 
