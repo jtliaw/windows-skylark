@@ -161,28 +161,28 @@ jobs:
         run: |
           # 创建环境设置脚本
           $envScriptContent = @"
-@echo off
-chcp 65001 > nul
-echo Setting up environment for Skylark Translator...
+          @echo off
+          chcp 65001 > nul
+          echo Setting up environment for Skylark Translator...
 
-set APP_DIR=%~dp0
-set ARGOS_PACKAGES_DIR=%APP_DIR%argos_packages
-set TESSDATA_PREFIX=%APP_DIR%tessdata
+          set APP_DIR=%~dp0
+          set ARGOS_PACKAGES_DIR=%APP_DIR%argos_packages
+          set TESSDATA_PREFIX=%APP_DIR%tessdata
 
-if not exist "%ARGOS_PACKAGES_DIR%" mkdir "%ARGOS_PACKAGES_DIR%"
-if not exist "%TESSDATA_PREFIX%" mkdir "%TESSDATA_PREFIX%"
+          if not exist "%ARGOS_PACKAGES_DIR%" mkdir "%ARGOS_PACKAGES_DIR%"
+          if not exist "%TESSDATA_PREFIX%" mkdir "%TESSDATA_PREFIX%"
 
-set QT_QPA_PLATFORM=windows
+          set QT_QPA_PLATFORM=windows
 
-echo Environment variables set:
-echo   APP_DIR=%APP_DIR%
-echo   ARGOS_PACKAGES_DIR=%ARGOS_PACKAGES_DIR%
-echo   TESSDATA_PREFIX=%TESSDATA_PREFIX%
+          echo Environment variables set:
+          echo   APP_DIR=%APP_DIR%
+          echo   ARGOS_PACKAGES_DIR=%ARGOS_PACKAGES_DIR%
+          echo   TESSDATA_PREFIX=%TESSDATA_PREFIX%
 
-echo.
-echo Starting Skylark Translator...
-start "" "%APP_DIR%SkylarkTranslator.exe"
-"@
+          echo.
+          echo Starting Skylark Translator...
+          start "" "%APP_DIR%SkylarkTranslator.exe"
+          "@
           $envScriptContent | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
           Write-Host "Created environment setup script: skylark_launcher.bat"
 
