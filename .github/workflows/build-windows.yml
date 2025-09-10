@@ -162,7 +162,7 @@ jobs:
         shell: powershell
         run: |
           # 创建环境设置脚本，确保语言包目录正确设置
-          $envScript = @'
+          $envScriptContent = @"
 @echo off
 REM Skylark Translator Environment Setup Script
 REM This script sets up environment variables for language packs
@@ -192,8 +192,8 @@ echo.
 start "" "%APP_DIR%SkylarkTranslator.exe"
 
 endlocal
-'@
-    $envScript | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
+"@
+    $envScriptContent | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
     Write-Host "Created environment setup script: skylark_launcher.bat"
 
       - name: Create configuration file
