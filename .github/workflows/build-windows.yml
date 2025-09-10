@@ -193,8 +193,8 @@ start "" "%APP_DIR%SkylarkTranslator.exe"
 
 endlocal
 '@
-          $envScript | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
-          Write-Host "Created environment setup script: skylark_launcher.bat"
+    $envScript | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
+    Write-Host "Created environment setup script: skylark_launcher.bat"
 
       - name: Create configuration file
         shell: powershell
