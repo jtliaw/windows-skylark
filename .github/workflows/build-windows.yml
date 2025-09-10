@@ -158,11 +158,11 @@ jobs:
               throw 'Build failed: executable file not found'
           }
 
-      - name: Create environment setup script
-        shell: powershell
-        run: |
-          # 创建环境设置脚本，确保语言包目录正确设置
-          $envScriptContent = @"
+- name: Create environment setup script
+  shell: powershell
+  run: |
+    # 创建环境设置脚本，确保语言包目录正确设置
+    $envScriptContent = @"
 @echo off
 REM Skylark Translator Environment Setup Script
 REM This script sets up environment variables for language packs
