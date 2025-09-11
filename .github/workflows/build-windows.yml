@@ -25,22 +25,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install system dependencies
+      - name: Install Chocolatey and Tesseract OCR
         shell: powershell
         run: |
-          # 安装 Tesseract OCR
-          $downloadUrl = 'https://github.com/UB-Mannheim/tesseract/releases/download/v5.3.3/tesseract-ocr-w64-setup-5.3.3.20231005.exe'
-          $installerPath = "$env:TEMP\tesseract-installer.exe"
+          # 安装 Chocolatey 包管理器
+          Write-Host 'Installing Chocolatey package manager...'
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
           
-          Write-Host 'Downloading Tesseract OCR installer...'
-          Invoke-WebRequest -Uri $downloadUrl -OutFile $installerPath
+          # 刷新环境变量以识别 choco 命令
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
           
-          Write-Host 'Installing Tesseract OCR...'
-          Start-Process -FilePath $installerPath -ArgumentList '/S' -Wait
+          # 使用 Chocolatey 安装 Tesseract OCR
+          Write-Host 'Installing Tesseract OCR via Chocolatey...'
+          choco install tesseract -y
           
+          # 验证安装
           if (Test-Path 'C:\Program Files\Tesseract-OCR\tesseract.exe') {
               echo 'C:\Program Files\Tesseract-OCR' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-              Write-Host 'Tesseract installed successfully'
+              Write-Host 'Tesseract installed successfully via Chocolatey'
           } else {
               Write-Error 'Tesseract installation failed'
               exit 1
@@ -113,7 +117,7 @@ jobs:
           Write-Host "Created tessdata directory"
           
           # 下载一些常用的OCR语言包
-          $commonLangs = @("eng", "chi_sim", "jpn", "kor", "deu", "fra", "spa")
+          $commonLangs = @("eng", "chi_sim")
           
           foreach ($lang in $commonLangs) {
               $url = "https://github.com/tesseract-ocr/tessdata/raw/main/${lang}.traineddata"
@@ -286,6 +290,7 @@ jobs:
           Write-Host "1. Simplified Build: Excluded problematic modules (stanza, setuptools._distutils)"
           Write-Host "2. Stable Dependencies: Used specific versions to ensure compatibility"
           Write-Host "3. Fallback Implementation: Added graceful fallback for translation features"
+          Write-Host "4. Tesseract Installation: Now using Chocolatey package manager for reliable installation"
           Write-Host ""
           Write-Host "## Download & Use"
           Write-Host "1. Download the ZIP file from Artifacts"
