@@ -105,6 +105,28 @@ jobs:
           $argosWrapper | Out-File -FilePath "argos_wrapper.py" -Encoding utf8
           Write-Host "Created simplified argostranslate wrapper"
 
+      - name: Create default OCR language directories
+        shell: powershell
+        run: |
+          # 创建默认的OCR语言包目录结构
+          New-Item -ItemType Directory -Path "tessdata" -Force
+          Write-Host "Created tessdata directory"
+          
+          # 下载一些常用的OCR语言包
+          $commonLangs = @("eng", "chi_sim", "jpn", "kor", "deu", "fra", "spa")
+          
+          foreach ($lang in $commonLangs) {
+              $url = "https://github.com/tesseract-ocr/tessdata/raw/main/${lang}.traineddata"
+              $outputPath = "tessdata/${lang}.traineddata"
+              
+              try {
+                  Invoke-WebRequest -Uri $url -OutFile $outputPath -TimeoutSec 30
+                  Write-Host "Downloaded OCR language pack: $lang"
+              } catch {
+                  Write-Host "Failed to download $lang language pack: $($_.Exception.Message)"
+              }
+          }
+
       - name: Build with PyInstaller (simplified)
         shell: powershell
         run: |
