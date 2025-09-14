@@ -67,7 +67,8 @@ jobs:
                   Write-Host 'Tesseract installation may have failed, but continuing build process'
               }
           } catch {
-              Write-Host "Failed to download or install Tesseract: $($_.Exception.Message)"
+              $errorMsg = $_.Exception.Message
+              Write-Host "Failed to download or install Tesseract: $errorMsg"
               Write-Host 'Continuing build process without Tesseract installation'
           } finally {
               # Clean up installer
@@ -123,7 +124,9 @@ jobs:
                       $downloaded = $true
                       break
                   } catch {
-                      Write-Host "Failed to download from $url: $($_.Exception.Message)"
+                      # 修复字符串插值问题
+                      $errorMsg = $_.Exception.Message
+                      Write-Host "Failed to download from $url : $errorMsg"
                   }
               }
               
@@ -180,4 +183,118 @@ jobs:
               throw 'Build failed: Executable file not found'
           }
 
-      # ... (其余步骤保持不变)
+      - name: Create environment setup script
+        shell: powershell
+        run: |
+          # Create environment setup script
+          $envScriptContent = @"
+          @echo off
+          chcp 65001 > nul
+          echo Setting up environment for Skylark Translator...
+
+          set APP_DIR=%~dp0
+          set TESSDATA_PREFIX=%APP_DIR%tessdata
+
+          if not exist "%TESSDATA_PREFIX%" mkdir "%TESSDATA_PREFIX%"
+
+          set QT_QPA_PLATFORM=windows
+
+          echo Environment variables set:
+          echo   APP_DIR=%APP_DIR%
+          echo   TESSDATA_PREFIX=%TESSDATA_PREFIX%
+
+          echo.
+          echo Starting Skylark Translator...
+          start "" "%APP_DIR%SkylarkTranslator.exe"
+          "@
+          $envScriptContent | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
+          Write-Host "Created environment setup script: skylark_launcher.bat"
+
+      - name: Create distribution package
+        shell: powershell
+        run: |
+          $releaseType = "${{ inputs.release_type }}"
+          $version = Get-Date -Format "yyyy.MM.dd.HHmm"
+          # As requested, don't include "test" in the package name
+          $packageName = "SkylarkTranslator_Windows_v${version}"
+          $buildSize = "${{ env.BUILD_SIZE_MB }}"
+          
+          Write-Host "Creating distribution package: $packageName"
+          Write-Host "Application size: $buildSize MB"
+          
+          Compress-Archive -Path "dist\SkylarkTranslator" -DestinationPath "dist\$packageName.zip" -Force
+          
+          $readmeLines = @(
+            "Skylark Screen Translator - Windows Version",
+            "Version: $version",
+            "Build Type: $releaseType",
+            "Build Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+            "Application Size: $buildSize MB",
+            "",
+            "== IMPORTANT NOTES ==",
+            "This version uses Google online translation service, no local translation models required.",
+            "OCR functionality is fully supported, includes English and Chinese language packs.",
+            "",
+            "== HOW TO USE ==",
+            "1. Extract this ZIP file to any folder (e.g., C:\SkylarkTranslator)",
+            "2. Run skylark_launcher.bat to set up environment variables",
+            "3. Or run SkylarkTranslator.exe directly",
+            "",
+            "== FEATURES ==",
+            "- Screen OCR text recognition (supports English, Simplified Chinese, Traditional Chinese)",
+            "- Google online translation",
+            "- Simple and easy-to-use interface",
+            "",
+            "== FILE LOCATIONS ==",
+            "- Main executable: SkylarkTranslator.exe",
+            "- Launcher script: skylark_launcher.bat",
+            "- Tesseract data: .\tessdata\",
+            "",
+            "== SUPPORT ==",
+            "If you encounter issues, please try:",
+            "1. Running skylark_launcher.bat instead of the executable directly",
+            "2. Ensuring your system has the latest Visual C++ Redistributable",
+            "3. Checking for Windows updates",
+            "4. Ensuring network connection is available (Google translation requires internet)"
+          )
+          
+          $readmeLines | Out-File -FilePath "dist\README_$packageName.txt" -Encoding utf8
+          
+          Write-Host "Package created: dist\$packageName.zip"
+          echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "PACKAGE_PATH=dist/$packageName.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SkylarkTranslator-Windows
+          path: |
+            ${{ env.PACKAGE_PATH }}
+            dist/README_${{ env.PACKAGE_NAME }}.txt
+          retention-days: 7
+
+      - name: Create build summary
+        shell: powershell
+        run: |
+          $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
+          $sizeMB = [math]::Round($size/1MB, 2)
+          
+          Write-Host "## Build Complete - OCR Only Version"
+          Write-Host "- Release Type: ${{ inputs.release_type }}"
+          Write-Host "- Application Size: ${{ env.BUILD_SIZE_MB }} MB"
+          Write-Host "- Zip Package Size: ${sizeMB} MB"
+          Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
+          Write-Host ""
+          Write-Host "## Key Changes"
+          Write-Host "1. Removed Argos Translate: Using Google online translation service"
+          Write-Host "2. Simplified Build: Excluded problematic modules (stanza, setuptools._distutils)"
+          Write-Host "3. Stable Dependencies: Used specific versions to ensure compatibility"
+          Write-Host "4. Direct Tesseract Installation: Downloaded and installed Tesseract directly"
+          Write-Host "5. Included OCR Language Packs: English, Simplified Chinese, Traditional Chinese"
+          Write-Host ""
+          Write-Host "## Download & Use"
+          Write-Host "1. Download the ZIP file from Artifacts"
+          Write-Host "2. Extract to any folder"
+          Write-Host "3. Run skylark_launcher.bat for best compatibility"
+          Write-Host "4. OCR functionality should work fully"
+          Write-Host "5. Translation requires internet connection (uses Google translation service)"
