@@ -1,4 +1,4 @@
-name: Build Windows Release (No Argos Translate)
+name: Build Windows Release (Minimal Size)
 
 on:
   workflow_dispatch:
@@ -101,12 +101,13 @@ jobs:
           New-Item -ItemType Directory -Path "tessdata" -Force
           Write-Host "Created OCR language pack directory: tessdata"
 
-      - name: Download OCR language packs
+      - name: Download essential OCR language packs
         shell: powershell
         run: |
-          $langs = @("eng", "chi_sim", "chi_tra")
+          # 只下载最核心的语言包：英语和简体中文
+          $essentialLangs = @("eng", "chi_sim")
           
-          foreach ($lang in $langs) {
+          foreach ($lang in $essentialLangs) {
               $outputPath = "tessdata/${lang}.traineddata"
               
               # Try multiple sources for downloading language packs
@@ -118,9 +119,9 @@ jobs:
               $downloaded = $false
               foreach ($url in $sources) {
                   try {
-                      Write-Host "Attempting to download $lang from $url"
+                      Write-Host "Attempting to download essential language pack: $lang from $url"
                       Invoke-WebRequest -Uri $url -OutFile $outputPath -TimeoutSec 30
-                      Write-Host "Successfully downloaded $lang language pack"
+                      Write-Host "Successfully downloaded essential language pack: $lang"
                       $downloaded = $true
                       break
                   } catch {
@@ -131,7 +132,7 @@ jobs:
               }
               
               if (-not $downloaded) {
-                  Write-Host "Warning: Could not download $lang language pack from any source"
+                  Write-Host "Warning: Could not download essential language pack: $lang from any source"
               }
           }
 
@@ -233,17 +234,18 @@ jobs:
             "",
             "== IMPORTANT NOTES ==",
             "This version uses Google online translation service, no local translation models required.",
-            "OCR functionality is fully supported, includes English and Chinese language packs.",
+            "OCR functionality is fully supported with essential language packs included (English and Simplified Chinese).",
+            "Additional language packs can be downloaded from within the application.",
             "",
             "== HOW TO USE ==",
             "1. Extract this ZIP file to any folder (e.g., C:\SkylarkTranslator)",
             "2. Run skylark_launcher.bat to set up environment variables",
             "3. Or run SkylarkTranslator.exe directly",
+            "4. For additional OCR languages, use the built-in download feature in the application",
             "",
-            "== FEATURES ==",
-            "- Screen OCR text recognition (supports English, Simplified Chinese, Traditional Chinese)",
-            "- Google online translation",
-            "- Simple and easy-to-use interface",
+            "== INCLUDED OCR LANGUAGES ==",
+            "- English (eng)",
+            "- Simplified Chinese (chi_sim)",
             "",
             "== FILE LOCATIONS ==",
             "- Main executable: SkylarkTranslator.exe",
@@ -279,22 +281,23 @@ jobs:
           $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
           $sizeMB = [math]::Round($size/1MB, 2)
           
-          Write-Host "## Build Complete - OCR Only Version"
+          Write-Host "## Build Complete - Minimal Size Edition"
           Write-Host "- Release Type: ${{ inputs.release_type }}"
           Write-Host "- Application Size: ${{ env.BUILD_SIZE_MB }} MB"
           Write-Host "- Zip Package Size: ${sizeMB} MB"
           Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
           Write-Host ""
-          Write-Host "## Key Changes"
-          Write-Host "1. Removed Argos Translate: Using Google online translation service"
-          Write-Host "2. Simplified Build: Excluded problematic modules (stanza, setuptools._distutils)"
-          Write-Host "3. Stable Dependencies: Used specific versions to ensure compatibility"
+          Write-Host "## Key Features"
+          Write-Host "1. Minimal Package Size: Includes only essential OCR language packs (English and Chinese)"
+          Write-Host "2. Removed Argos Translate: Using Google online translation service"
+          Write-Host "3. Simplified Build: Excluded problematic modules"
           Write-Host "4. Direct Tesseract Installation: Downloaded and installed Tesseract directly"
-          Write-Host "5. Included OCR Language Packs: English, Simplified Chinese, Traditional Chinese"
+          Write-Host "5. Expandable: Users can download additional OCR languages from within the application"
           Write-Host ""
           Write-Host "## Download & Use"
           Write-Host "1. Download the ZIP file from Artifacts"
           Write-Host "2. Extract to any folder"
           Write-Host "3. Run skylark_launcher.bat for best compatibility"
-          Write-Host "4. OCR functionality should work fully"
-          Write-Host "5. Translation requires internet connection (uses Google translation service)"
+          Write-Host "4. OCR functionality should work fully with included languages"
+          Write-Host "5. Use the in-app downloader for additional OCR languages"
+          Write-Host "6. Translation requires internet connection (uses Google translation service)"
