@@ -2422,7 +2422,7 @@ class ScreenTranslator(QMainWindow):
         self.init_global_mouse_listener()
         
         # 设置窗口属性
-        self.setWindowTitle("Skylark Translation V2.4 - 扫描屏幕翻译软件")
+        self.setWindowTitle("Skylark Translation V3.0 - 在线版扫描屏幕翻译软件")
         self.setGeometry(100, 100, 550, 350)  # 稍微增大窗口
         
         # 窗口激活状态跟踪
