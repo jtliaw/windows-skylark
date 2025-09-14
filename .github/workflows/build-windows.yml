@@ -1,10 +1,10 @@
-name: 构建Windows版本（无Argos Translate）
+name: Build Windows Release (No Argos Translate)
 
 on:
   workflow_dispatch:
     inputs:
       release_type:
-        description: '发布类型'
+        description: 'Release Type'
         required: true
         default: 'test'
         type: choice
@@ -17,48 +17,48 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: 检出代码
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 设置Python环境
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: 安装Chocolatey和Tesseract OCR
+      - name: Install Chocolatey and Tesseract OCR
         shell: powershell
         run: |
-          # 安装 Chocolatey 包管理器
-          Write-Host '正在安装Chocolatey包管理器...'
+          # Install Chocolatey package manager
+          Write-Host 'Installing Chocolatey package manager...'
           Set-ExecutionPolicy Bypass -Scope Process -Force
           [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
           iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
           
-          # 刷新环境变量以识别 choco 命令
+          # Refresh environment variables to recognize choco command
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
           
-          # 使用 Chocolatey 安装 Tesseract OCR
-          Write-Host '正在通过Chocolatey安装Tesseract OCR...'
+          # Install Tesseract OCR using Chocolatey
+          Write-Host 'Installing Tesseract OCR via Chocolatey...'
           choco install tesseract -y
           
-          # 验证安装
+          # Verify installation
           if (Test-Path 'C:\Program Files\Tesseract-OCR\tesseract.exe') {
               echo 'C:\Program Files\Tesseract-OCR' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-              Write-Host '通过Chocolatey成功安装Tesseract'
+              Write-Host 'Tesseract installed successfully via Chocolatey'
           } else {
-              Write-Error 'Tesseract安装失败'
+              Write-Error 'Tesseract installation failed'
               exit 1
           }
 
-      - name: 安装Python依赖（特定版本）
+      - name: Install Python dependencies (with specific versions)
         shell: powershell
         run: |
           python -m pip install --upgrade pip setuptools wheel
           
-          # 安装特定版本的setuptools以避免兼容性问题
+          # Install specific version of setuptools to avoid compatibility issues
           pip install setuptools==68.0.0
           
-          # 安装核心依赖
+          # Install core dependencies
           pip install PyQt5==5.15.9
           pip install pytesseract==0.3.10
           pip install numpy==1.24.3
@@ -68,27 +68,27 @@ jobs:
           pip install requests==2.31.0
           pip install pyinstaller==6.2.0
           
-          # 安装其他依赖
+          # Install other dependencies
           pip install mss==9.0.1
           pip install pynput==1.7.6
           pip install screeninfo==0.8.1
           pip install ttkthemes==3.2.2
 
-      - name: 创建语言包目录
+      - name: Create language pack directories
         shell: powershell
         run: |
-          # 仅创建OCR语言包目录
+          # Create only OCR language pack directory
           New-Item -ItemType Directory -Path "tessdata" -Force
-          Write-Host "已创建OCR语言包目录: tessdata"
+          Write-Host "Created OCR language pack directory: tessdata"
 
-      - name: 创建默认OCR语言包
+      - name: Create default OCR language packs
         shell: powershell
         run: |
-          # 创建默认的OCR语言包目录结构
+          # Create default OCR language pack directory structure
           New-Item -ItemType Directory -Path "tessdata" -Force
-          Write-Host "已创建tessdata目录"
+          Write-Host "Created tessdata directory"
           
-          # 下载OCR语言包（英语和中文）
+          # Download OCR language packs (English and Chinese)
           $langs = @("eng", "chi_sim", "chi_tra")
           
           foreach ($lang in $langs) {
@@ -97,27 +97,27 @@ jobs:
               
               try {
                   Invoke-WebRequest -Uri $url -OutFile $outputPath -TimeoutSec 30
-                  Write-Host "已下载OCR语言包: $lang"
+                  Write-Host "Downloaded OCR language pack: $lang"
               } catch {
-                  Write-Host "下载$lang语言包失败: $($_.Exception.Message)"
+                  Write-Host "Failed to download $lang language pack: $($_.Exception.Message)"
               }
           }
 
-      - name: 使用PyInstaller构建（简化版）
+      - name: Build with PyInstaller (simplified)
         shell: powershell
         run: |
-          Write-Host '正在构建Skylark屏幕翻译器...'
+          Write-Host 'Building Skylark Screen Translator...'
           
           if (Test-Path 'skylark_screen_translator.py') {
-            Write-Host '找到主程序: skylark_screen_translator.py'
+            Write-Host 'Found main program: skylark_screen_translator.py'
             $mainScript = 'skylark_screen_translator.py'
           } else {
-            Write-Host '可用的Python文件:'
+            Write-Host 'Available Python files:'
             Get-ChildItem *.py | Format-Table Name
-            throw '未找到主程序。请检查您的仓库结构。'
+            throw 'Main program not found. Please check your repository structure.'
           }
           
-          # 使用简化的PyInstaller配置，避免问题模块
+          # Use simplified PyInstaller configuration to avoid problematic modules
           $pyinstallerArgs = @(
               "--name", "SkylarkTranslator",
               "--onedir",
@@ -135,32 +135,32 @@ jobs:
               "--hidden-import", "PyQt5.QtCore",
               "--hidden-import", "PyQt5.QtGui",
               "--hidden-import", "PyQt5.QtWidgets",
-              "--exclude-module", "stanza",  # 排除有问题的模块
-              "--exclude-module", "setuptools._distutils",  # 排除有问题的模块
+              "--exclude-module", "stanza",  # Exclude problematic module
+              "--exclude-module", "setuptools._distutils",  # Exclude problematic module
               $mainScript
           )
           
-          # 执行PyInstaller命令
+          # Execute PyInstaller command
           pyinstaller @pyinstallerArgs
           
           $exePath = 'dist\SkylarkTranslator\SkylarkTranslator.exe'
           if (Test-Path $exePath) {
               $folderSize = (Get-ChildItem 'dist\SkylarkTranslator' -Recurse | Measure-Object -Property Length -Sum).Sum
               $sizeMB = [math]::Round($folderSize/1MB, 2)
-              Write-Host "构建成功! 目录大小: $sizeMB MB"
+              Write-Host "Build successful! Directory size: $sizeMB MB"
               echo "BUILD_SIZE_MB=$sizeMB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } else {
-              throw '构建失败: 未找到可执行文件'
+              throw 'Build failed: Executable file not found'
           }
 
-      - name: 创建环境设置脚本
+      - name: Create environment setup script
         shell: powershell
         run: |
-          # 创建环境设置脚本
+          # Create environment setup script
           $envScriptContent = @"
           @echo off
           chcp 65001 > nul
-          echo 正在设置Skylark翻译器环境...
+          echo Setting up environment for Skylark Translator...
 
           set APP_DIR=%~dp0
           set TESSDATA_PREFIX=%APP_DIR%tessdata
@@ -169,23 +169,23 @@ jobs:
 
           set QT_QPA_PLATFORM=windows
 
-          echo 已设置环境变量:
+          echo Environment variables set:
           echo   APP_DIR=%APP_DIR%
           echo   TESSDATA_PREFIX=%TESSDATA_PREFIX%
 
           echo.
-          echo 正在启动Skylark翻译器...
+          echo Starting Skylark Translator...
           start "" "%APP_DIR%SkylarkTranslator.exe"
           "@
           $envScriptContent | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
-          Write-Host "已创建环境设置脚本: skylark_launcher.bat"
+          Write-Host "Created environment setup script: skylark_launcher.bat"
 
-      - name: 创建分发包
+      - name: Create distribution package
         shell: powershell
         run: |
           $releaseType = "${{ inputs.release_type }}"
           $version = Get-Date -Format "yyyy.MM.dd.HHmm"
-          # 根据用户要求，不在包名中包含"test"字样
+          # As requested, don't include "test" in the package name
           if ("$releaseType" -eq "test") {
               $packageName = "SkylarkTranslator_Windows_v${version}"
           } else {
@@ -193,52 +193,52 @@ jobs:
           }
           $buildSize = "${{ env.BUILD_SIZE_MB }}"
           
-          Write-Host "正在创建分发包: $packageName"
-          Write-Host "应用程序大小: $buildSize MB"
+          Write-Host "Creating distribution package: $packageName"
+          Write-Host "Application size: $buildSize MB"
           
           Compress-Archive -Path "dist\SkylarkTranslator" -DestinationPath "dist\$packageName.zip" -Force
           
           $readmeLines = @(
-            "Skylark屏幕翻译器 - Windows版本",
-            "版本号: $version",
-            "构建类型: $releaseType",
-            "构建时间: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
-            "应用程序大小: $buildSize MB",
+            "Skylark Screen Translator - Windows Version",
+            "Version: $version",
+            "Build Type: $releaseType",
+            "Build Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+            "Application Size: $buildSize MB",
             "",
-            "== 重要说明 ==",
-            "此版本使用谷歌在线翻译服务，无需本地翻译模型。",
-            "OCR功能完全支持，包含英语和中文语言包。",
+            "== IMPORTANT NOTES ==",
+            "This version uses Google online translation service, no local translation models required.",
+            "OCR functionality is fully supported, includes English and Chinese language packs.",
             "",
-            "== 使用方法 ==",
-            "1. 将此ZIP文件解压到任意文件夹（例如: C:\SkylarkTranslator）",
-            "2. 运行 skylark_launcher.bat 设置环境变量",
-            "3. 或直接运行 SkylarkTranslator.exe",
+            "== HOW TO USE ==",
+            "1. Extract this ZIP file to any folder (e.g., C:\SkylarkTranslator)",
+            "2. Run skylark_launcher.bat to set up environment variables",
+            "3. Or run SkylarkTranslator.exe directly",
             "",
-            "== 功能特点 ==",
-            "- 屏幕OCR文字识别（支持英文、简体中文、繁体中文）",
-            "- 谷歌在线翻译",
-            "- 简洁易用的界面",
+            "== FEATURES ==",
+            "- Screen OCR text recognition (supports English, Simplified Chinese, Traditional Chinese)",
+            "- Google online translation",
+            "- Simple and easy-to-use interface",
             "",
-            "== 文件位置 ==",
-            "- 主程序: SkylarkTranslator.exe",
-            "- 启动脚本: skylark_launcher.bat",
-            "- Tesseract数据: .\tessdata\",
+            "== FILE LOCATIONS ==",
+            "- Main executable: SkylarkTranslator.exe",
+            "- Launcher script: skylark_launcher.bat",
+            "- Tesseract data: .\tessdata\",
             "",
-            "== 支持与帮助 ==",
-            "如果遇到问题，请尝试:",
-            "1. 运行 skylark_launcher.bat 而不是直接运行可执行文件",
-            "2. 确保系统已安装最新的Visual C++运行库",
-            "3. 检查Windows更新",
-            "4. 确保网络连接正常（使用谷歌翻译需要网络）"
+            "== SUPPORT ==",
+            "If you encounter issues, please try:",
+            "1. Running skylark_launcher.bat instead of the executable directly",
+            "2. Ensuring your system has the latest Visual C++ Redistributable",
+            "3. Checking for Windows updates",
+            "4. Ensuring network connection is available (Google translation requires internet)"
           )
           
           $readmeLines | Out-File -FilePath "dist\README_$packageName.txt" -Encoding utf8
           
-          Write-Host "包已创建: dist\$packageName.zip"
+          Write-Host "Package created: dist\$packageName.zip"
           echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "PACKAGE_PATH=dist/$packageName.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: 上传制品
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: SkylarkTranslator-Windows
@@ -247,28 +247,28 @@ jobs:
             dist/README_${{ env.PACKAGE_NAME }}.txt
           retention-days: 7
 
-      - name: 创建构建摘要
+      - name: Create build summary
         shell: powershell
         run: |
           $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
           $sizeMB = [math]::Round($size/1MB, 2)
           
-          Write-Host "## 构建完成 - 仅OCR版本"
-          Write-Host "- 发布类型: ${{ inputs.release_type }}"
-          Write-Host "- 应用程序大小: ${{ env.BUILD_SIZE_MB }} MB"
-          Write-Host "- ZIP包大小: ${sizeMB} MB"
-          Write-Host "- 文件名称: ${{ env.PACKAGE_NAME }}.zip"
+          Write-Host "## Build Complete - OCR Only Version"
+          Write-Host "- Release Type: ${{ inputs.release_type }}"
+          Write-Host "- Application Size: ${{ env.BUILD_SIZE_MB }} MB"
+          Write-Host "- Zip Package Size: ${sizeMB} MB"
+          Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
           Write-Host ""
-          Write-Host "## 主要变更"
-          Write-Host "1. 移除了Argos Translate: 使用谷歌在线翻译服务"
-          Write-Host "2. 简化构建: 排除了有问题的模块 (stanza, setuptools._distutils)"
-          Write-Host "3. 稳定依赖: 使用特定版本确保兼容性"
-          Write-Host "4. Tesseract安装: 使用Chocolatey包管理器确保可靠安装"
-          Write-Host "5. 包含OCR语言包: 英语、简体中文、繁体中文"
+          Write-Host "## Key Changes"
+          Write-Host "1. Removed Argos Translate: Using Google online translation service"
+          Write-Host "2. Simplified Build: Excluded problematic modules (stanza, setuptools._distutils)"
+          Write-Host "3. Stable Dependencies: Used specific versions to ensure compatibility"
+          Write-Host "4. Tesseract Installation: Using Chocolatey package manager for reliable installation"
+          Write-Host "5. Included OCR Language Packs: English, Simplified Chinese, Traditional Chinese"
           Write-Host ""
-          Write-Host "## 下载与使用"
-          Write-Host "1. 从制品(Artifacts)下载ZIP文件"
-          Write-Host "2. 解压到任意文件夹"
-          Write-Host "3. 运行 skylark_launcher.bat 以获得最佳兼容性"
-          Write-Host "4. OCR功能应该完全正常工作"
-          Write-Host "5. 翻译功能需要网络连接（使用谷歌翻译服务）"
+          Write-Host "## Download & Use"
+          Write-Host "1. Download the ZIP file from Artifacts"
+          Write-Host "2. Extract to any folder"
+          Write-Host "3. Run skylark_launcher.bat for best compatibility"
+          Write-Host "4. OCR functionality should work fully"
+          Write-Host "5. Translation requires internet connection (uses Google translation service)"
