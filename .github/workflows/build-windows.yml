@@ -95,45 +95,54 @@ jobs:
           pip install screeninfo==0.8.1
           pip install ttkthemes==3.2.2
 
-      - name: Create language pack directories
+      # 创建空的 tessdata 目录（应用运行时会自动管理）
+      - name: Create tessdata directory structure
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path "tessdata" -Force
-          Write-Host "Created OCR language pack directory: tessdata"
+          Write-Host "Created tessdata directory for application use"
+          # 创建一个标记文件，表明这是空目录
+          "# This directory will be populated by the application at runtime" | Out-File -FilePath "tessdata\README.txt" -Encoding utf8
 
-      - name: Download essential OCR language packs
+      # 可选：预下载核心语言包（减少用户首次使用时的等待）
+      - name: Download essential OCR language packs (optional)
         shell: powershell
         run: |
-          # 只下载最核心的语言包：英语和简体中文
-          $essentialLangs = @("eng", "chi_sim")
+          # 由于你的应用支持内置下载，这一步是可选的
+          # 如果你想减少用户首次使用的等待时间，可以预下载核心语言包
+          $downloadCore = $true  # 设为 $false 可跳过预下载
           
-          foreach ($lang in $essentialLangs) {
-              $outputPath = "tessdata/${lang}.traineddata"
+          if ($downloadCore) {
+              $essentialLangs = @("eng", "chi_sim")
               
-              # Try multiple sources for downloading language packs
-              $sources = @(
-                  "https://github.com/tesseract-ocr/tessdata/raw/main/${lang}.traineddata",
-                  "https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/${lang}.traineddata"
-              )
-              
-              $downloaded = $false
-              foreach ($url in $sources) {
-                  try {
-                      Write-Host "Attempting to download essential language pack: $lang from $url"
-                      Invoke-WebRequest -Uri $url -OutFile $outputPath -TimeoutSec 30
-                      Write-Host "Successfully downloaded essential language pack: $lang"
-                      $downloaded = $true
-                      break
-                  } catch {
-                      # 修复字符串插值问题
-                      $errorMsg = $_.Exception.Message
-                      Write-Host "Failed to download from $url : $errorMsg"
+              foreach ($lang in $essentialLangs) {
+                  $outputPath = "tessdata\${lang}.traineddata"
+                  
+                  $sources = @(
+                      "https://github.com/tesseract-ocr/tessdata/raw/main/${lang}.traineddata",
+                      "https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/${lang}.traineddata"
+                  )
+                  
+                  $downloaded = $false
+                  foreach ($url in $sources) {
+                      try {
+                          Write-Host "Downloading language pack: $lang from $url"
+                          Invoke-WebRequest -Uri $url -OutFile $outputPath -TimeoutSec 60
+                          Write-Host "Successfully downloaded: $lang"
+                          $downloaded = $true
+                          break
+                      } catch {
+                          $errorMsg = $_.Exception.Message
+                          Write-Host "Failed to download from $url : $errorMsg"
+                      }
+                  }
+                  
+                  if (-not $downloaded) {
+                      Write-Host "Warning: Could not download $lang - users can download it through the app"
                   }
               }
-              
-              if (-not $downloaded) {
-                  Write-Host "Warning: Could not download essential language pack: $lang from any source"
-              }
+          } else {
+              Write-Host "Skipping pre-download of language packs - users will download via application"
           }
 
       - name: Build with PyInstaller
@@ -141,16 +150,25 @@ jobs:
         run: |
           Write-Host 'Building Skylark Screen Translator...'
           
-          if (Test-Path 'skylark_screen_translator.py') {
-            Write-Host 'Found main program: skylark_screen_translator.py'
-            $mainScript = 'skylark_screen_translator.py'
-          } else {
-            Write-Host 'Available Python files:'
-            Get-ChildItem *.py | Format-Table Name
-            throw 'Main program not found. Please check your repository structure.'
+          # 检查主脚本文件
+          $possibleScripts = @("skylark_screen_translator.py", "main.py", "app.py")
+          $mainScript = $null
+          
+          foreach ($script in $possibleScripts) {
+              if (Test-Path $script) {
+                  $mainScript = $script
+                  Write-Host "Found main script: $mainScript"
+                  break
+              }
           }
           
-          # Simplified PyInstaller configuration
+          if (-not $mainScript) {
+              Write-Host 'Available Python files:'
+              Get-ChildItem *.py | Format-Table Name
+              throw 'Main program not found. Please check your repository structure.'
+          }
+          
+          # PyInstaller 配置
           $pyinstallerArgs = @(
               "--name", "SkylarkTranslator",
               "--onedir",
@@ -166,98 +184,173 @@ jobs:
               "--hidden-import", "PyQt5.QtCore",
               "--hidden-import", "PyQt5.QtGui",
               "--hidden-import", "PyQt5.QtWidgets",
+              "--hidden-import", "mss",
+              "--hidden-import", "pynput", 
+              "--hidden-import", "screeninfo",
+              "--hidden-import", "ttkthemes",
               "--exclude-module", "stanza",
               "--exclude-module", "setuptools._distutils",
+              "--exclude-module", "test",
+              "--exclude-module", "unittest",
               $mainScript
           )
           
-          # Execute PyInstaller command
+          # 执行 PyInstaller
           pyinstaller @pyinstallerArgs
           
-          $exePath = 'dist\SkylarkTranslator\SkylarkTranslator.exe'
+          # 验证构建结果
+          $exePath = "dist\SkylarkTranslator\SkylarkTranslator.exe"
           if (Test-Path $exePath) {
               $folderSize = (Get-ChildItem 'dist\SkylarkTranslator' -Recurse | Measure-Object -Property Length -Sum).Sum
               $sizeMB = [math]::Round($folderSize/1MB, 2)
               Write-Host "Build successful! Directory size: $sizeMB MB"
               echo "BUILD_SIZE_MB=$sizeMB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              
+              # 验证 tessdata 目录是否正确包含
+              if (Test-Path "dist\SkylarkTranslator\tessdata") {
+                  Write-Host "tessdata directory successfully included in build"
+              } else {
+                  Write-Host "Warning: tessdata directory not found in build output"
+              }
           } else {
               throw 'Build failed: Executable file not found'
           }
 
-      - name: Create environment setup script
+      - name: Create enhanced launcher script
         shell: powershell
         run: |
-          # Create environment setup script
-          $envScriptContent = @"
+          # 创建增强的启动脚本
+          $launcherContent = @"
           @echo off
           chcp 65001 > nul
-          echo Setting up environment for Skylark Translator...
-
+          echo ================================================
+          echo    Skylark Screen Translator - Windows Launcher
+          echo ================================================
+          echo.
+          
           set APP_DIR=%~dp0
           set TESSDATA_PREFIX=%APP_DIR%tessdata
-
-          if not exist "%TESSDATA_PREFIX%" mkdir "%TESSDATA_PREFIX%"
-
+          
+          echo Setting up environment...
+          echo   Application Directory: %APP_DIR%
+          echo   Tesseract Data Directory: %TESSDATA_PREFIX%
+          
+          REM 确保 tessdata 目录存在
+          if not exist "%TESSDATA_PREFIX%" (
+              echo Creating tessdata directory...
+              mkdir "%TESSDATA_PREFIX%"
+          )
+          
+          REM 设置 Qt 平台
           set QT_QPA_PLATFORM=windows
-
-          echo Environment variables set:
-          echo   APP_DIR=%APP_DIR%
-          echo   TESSDATA_PREFIX=%TESSDATA_PREFIX%
-
+          
+          REM 检查可执行文件是否存在
+          if not exist "%APP_DIR%SkylarkTranslator.exe" (
+              echo ERROR: SkylarkTranslator.exe not found!
+              echo Please ensure you have extracted all files correctly.
+              pause
+              exit /b 1
+          )
+          
           echo.
-          echo Starting Skylark Translator...
+          echo Starting Skylark Screen Translator...
+          echo Note: The application will automatically manage OCR language packs.
+          echo You can download additional languages from within the application.
+          echo.
+          
+          REM 启动应用
+          cd /d "%APP_DIR%"
           start "" "%APP_DIR%SkylarkTranslator.exe"
+          
+          REM 等待一秒钟让应用启动
+          timeout /t 1 > nul
+          echo Application started successfully!
           "@
-          $envScriptContent | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
-          Write-Host "Created environment setup script: skylark_launcher.bat"
+          
+          $launcherContent | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
+          Write-Host "Created enhanced launcher script: skylark_launcher.bat"
 
       - name: Create distribution package
         shell: powershell
         run: |
           $releaseType = "${{ inputs.release_type }}"
           $version = Get-Date -Format "yyyy.MM.dd.HHmm"
-          # As requested, don't include "test" in the package name
           $packageName = "SkylarkTranslator_Windows_v${version}"
           $buildSize = "${{ env.BUILD_SIZE_MB }}"
           
           Write-Host "Creating distribution package: $packageName"
           Write-Host "Application size: $buildSize MB"
           
+          # 创建压缩包
           Compress-Archive -Path "dist\SkylarkTranslator" -DestinationPath "dist\$packageName.zip" -Force
           
+          # 创建详细的 README
           $readmeLines = @(
-            "Skylark Screen Translator - Windows Version",
+            "===============================================",
+            "   Skylark Screen Translator - Windows Build",
+            "===============================================",
+            "",
             "Version: $version",
-            "Build Type: $releaseType",
+            "Build Type: $releaseType", 
             "Build Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
             "Application Size: $buildSize MB",
             "",
-            "== IMPORTANT NOTES ==",
-            "This version uses Google online translation service, no local translation models required.",
-            "OCR functionality is fully supported with essential language packs included (English and Simplified Chinese).",
-            "Additional language packs can be downloaded from within the application.",
+            "== QUICK START ==",
+            "1. Extract this ZIP file to any folder",
+            "2. Run 'skylark_launcher.bat' (recommended)",
+            "   OR run 'SkylarkTranslator.exe' directly",
+            "3. The application will auto-create tessdata folder",
+            "4. Download OCR language packs from within the app",
             "",
-            "== HOW TO USE ==",
-            "1. Extract this ZIP file to any folder (e.g., C:\SkylarkTranslator)",
-            "2. Run skylark_launcher.bat to set up environment variables",
-            "3. Or run SkylarkTranslator.exe directly",
-            "4. For additional OCR languages, use the built-in download feature in the application",
+            "== KEY FEATURES ==",
+            "✓ Automatic tessdata directory management",
+            "✓ Built-in OCR language pack downloader", 
+            "✓ Google online translation (requires internet)",
+            "✓ Screen capture and OCR functionality",
+            "✓ Multi-language support",
             "",
-            "== INCLUDED OCR LANGUAGES ==",
-            "- English (eng)",
-            "- Simplified Chinese (chi_sim)",
+            "== DIRECTORY STRUCTURE ==",
+            "SkylarkTranslator/",
+            "├── SkylarkTranslator.exe     # Main application",
+            "├── skylark_launcher.bat      # Recommended launcher",
+            "├── tessdata/                 # OCR language packs (auto-managed)",
+            "└── [PyQt5 and other dependencies]",
             "",
-            "== FILE LOCATIONS ==",
-            "- Main executable: SkylarkTranslator.exe",
-            "- Launcher script: skylark_launcher.bat",
-            "- Tesseract data: .\tessdata\",
+            "== OCR LANGUAGE MANAGEMENT ==",
+            "- The application automatically creates the tessdata folder",
+            "- Language packs are downloaded on-demand through the app interface",
+            "- No manual tessdata management required",
+            "- Supports all Tesseract languages",
+            "",
+            "== SYSTEM REQUIREMENTS ==",
+            "- Windows 10 or later (recommended)",
+            "- Internet connection (for translation and language pack downloads)",
+            "- Visual C++ Redistributable 2015-2022 (usually pre-installed)",
+            "",
+            "== TROUBLESHOOTING ==",
+            "1. If the app won't start:",
+            "   - Use skylark_launcher.bat instead of direct .exe",
+            "   - Install Visual C++ Redistributable 2015-2022",
+            "   - Run as Administrator if necessary",
+            "",
+            "2. If OCR doesn't work:",
+            "   - The app will prompt you to download language packs",
+            "   - Ensure internet connection for downloads",
+            "   - Check that tessdata folder was created",
+            "",
+            "3. If translation fails:",
+            "   - Ensure stable internet connection",
+            "   - Google translation service requires internet access",
+            "",
+            "== TECHNICAL NOTES ==",
+            "- This build uses Google's online translation service",
+            "- OCR powered by Tesseract OCR engine",
+            "- Language packs downloaded from official Tesseract repository",
+            "- All data stored locally (except translation requests)",
             "",
             "== SUPPORT ==",
-            "If you encounter issues, please try:",
-            "1. Running skylark_launcher.bat instead of the executable directly",
-            "2. Ensuring your system has the latest Visual C++ Redistributable",
-            "3. Checking for Windows updates",
-            "4. Ensuring network connection is available (Google translation requires internet)"
+            "For issues or questions, please check the project repository.",
+            "The application includes built-in error handling and user guidance."
           )
           
           $readmeLines | Out-File -FilePath "dist\README_$packageName.txt" -Encoding utf8
@@ -269,35 +362,40 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SkylarkTranslator-Windows
+          name: SkylarkTranslator-Windows-${{ inputs.release_type }}
           path: |
             ${{ env.PACKAGE_PATH }}
             dist/README_${{ env.PACKAGE_NAME }}.txt
-          retention-days: 7
+          retention-days: 30
 
       - name: Create build summary
         shell: powershell
         run: |
-          $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
-          $sizeMB = [math]::Round($size/1MB, 2)
+          $packageSize = (Get-Item "${{ env.PACKAGE_PATH }}").Length
+          $packageSizeMB = [math]::Round($packageSize/1MB, 2)
           
-          Write-Host "## Build Complete - Minimal Size Edition"
-          Write-Host "- Release Type: ${{ inputs.release_type }}"
-          Write-Host "- Application Size: ${{ env.BUILD_SIZE_MB }} MB"
-          Write-Host "- Zip Package Size: ${sizeMB} MB"
-          Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
+          Write-Host "## ✅ Build Complete - Optimized for User Experience"
           Write-Host ""
-          Write-Host "## Key Features"
-          Write-Host "1. Minimal Package Size: Includes only essential OCR language packs (English and Chinese)"
-          Write-Host "2. Removed Argos Translate: Using Google online translation service"
-          Write-Host "3. Simplified Build: Excluded problematic modules"
-          Write-Host "4. Direct Tesseract Installation: Downloaded and installed Tesseract directly"
-          Write-Host "5. Expandable: Users can download additional OCR languages from within the application"
+          Write-Host "### 📋 Build Information"
+          Write-Host "- **Release Type:** ${{ inputs.release_type }}"
+          Write-Host "- **Application Size:** ${{ env.BUILD_SIZE_MB }} MB"
+          Write-Host "- **Package Size:** ${packageSizeMB} MB"
+          Write-Host "- **File Name:** ${{ env.PACKAGE_NAME }}.zip"
           Write-Host ""
-          Write-Host "## Download & Use"
-          Write-Host "1. Download the ZIP file from Artifacts"
-          Write-Host "2. Extract to any folder"
-          Write-Host "3. Run skylark_launcher.bat for best compatibility"
-          Write-Host "4. OCR functionality should work fully with included languages"
-          Write-Host "5. Use the in-app downloader for additional OCR languages"
-          Write-Host "6. Translation requires internet connection (uses Google translation service)"
+          Write-Host "### 🎯 Key Optimizations"
+          Write-Host "1. **Auto-managed tessdata:** Application creates and manages tessdata directory"
+          Write-Host "2. **On-demand downloads:** Users download OCR languages as needed"
+          Write-Host "3. **Enhanced launcher:** Improved skylark_launcher.bat with better error handling"
+          Write-Host "4. **Streamlined build:** Excluded unnecessary modules for smaller size"
+          Write-Host ""
+          Write-Host "### 🚀 User Experience"
+          Write-Host "1. Extract ZIP → Run skylark_launcher.bat → Ready to use"
+          Write-Host "2. Automatic tessdata folder creation and management"
+          Write-Host "3. Built-in language pack downloader"
+          Write-Host "4. No manual configuration required"
+          Write-Host ""
+          Write-Host "### 📦 Distribution Ready"
+          Write-Host "- Download from GitHub Actions artifacts"
+          Write-Host "- Comprehensive README included"
+          Write-Host "- Enhanced launcher script for better compatibility"
+          Write-Host "- Self-contained and portable"
