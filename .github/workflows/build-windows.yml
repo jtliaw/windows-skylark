@@ -1,4 +1,4 @@
-name: Build Windows Release (No Argos Translate)
+name: Build Windows Release (Minimal Size)
 
 on:
   workflow_dispatch:
@@ -25,40 +25,63 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Chocolatey and Tesseract OCR
+      - name: Check if Tesseract is already installed
         shell: powershell
         run: |
-          # 安装 Chocolatey 包管理器
-          Write-Host 'Installing Chocolatey package manager...'
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          
-          # 刷新环境变量以识别 choco 命令
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-          
-          # 使用 Chocolatey 安装 Tesseract OCR
-          Write-Host 'Installing Tesseract OCR via Chocolatey...'
-          choco install tesseract -y
-          
-          # 验证安装
           if (Test-Path 'C:\Program Files\Tesseract-OCR\tesseract.exe') {
+              Write-Host 'Tesseract is already installed'
               echo 'C:\Program Files\Tesseract-OCR' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-              Write-Host 'Tesseract installed successfully via Chocolatey'
+              exit 0
           } else {
-              Write-Error 'Tesseract installation failed'
-              exit 1
+              Write-Host 'Tesseract not found, will install it'
           }
 
-      - name: Install Python dependencies (with specific versions)
+      - name: Install Tesseract OCR (if needed)
+        shell: powershell
+        run: |
+          if (Test-Path 'C:\Program Files\Tesseract-OCR\tesseract.exe') {
+              Write-Host 'Tesseract already installed, skipping installation'
+              exit 0
+          }
+          
+          Write-Host 'Installing Tesseract OCR using Windows installer...'
+          
+          # Download Tesseract installer from official source
+          $tesseractUrl = "https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-5.3.3.20231005.exe"
+          $installerPath = "$env:TEMP\tesseract-setup.exe"
+          
+          try {
+              # Download the installer
+              Write-Host "Downloading Tesseract installer from $tesseractUrl"
+              Invoke-WebRequest -Uri $tesseractUrl -OutFile $installerPath
+              
+              # Install Tesseract silently
+              Write-Host "Installing Tesseract OCR..."
+              Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+              
+              # Verify installation
+              if (Test-Path 'C:\Program Files\Tesseract-OCR\tesseract.exe') {
+                  echo 'C:\Program Files\Tesseract-OCR' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+                  Write-Host 'Tesseract installed successfully'
+              } else {
+                  Write-Host 'Tesseract installation may have failed, but continuing build process'
+              }
+          } catch {
+              $errorMsg = $_.Exception.Message
+              Write-Host "Failed to download or install Tesseract: $errorMsg"
+              Write-Host 'Continuing build process without Tesseract installation'
+          } finally {
+              # Clean up installer
+              if (Test-Path $installerPath) {
+                  Remove-Item $installerPath -Force
+              }
+          }
+
+      - name: Install Python dependencies
         shell: powershell
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          
-          # 安装特定版本的 setuptools 以避免兼容性问题
           pip install setuptools==68.0.0
-          
-          # 安装核心依赖
           pip install PyQt5==5.15.9
           pip install pytesseract==0.3.10
           pip install numpy==1.24.3
@@ -67,43 +90,12 @@ jobs:
           pip install certifi==2023.7.22
           pip install requests==2.31.0
           pip install pyinstaller==6.2.0
-          
-          # 安装其他依赖
           pip install mss==9.0.1
           pip install pynput==1.7.6
           pip install screeninfo==0.8.1
           pip install ttkthemes==3.2.2
 
-      - name: Create language pack directories
-        shell: powershell
-        run: |
-          # 仅创建OCR语言包目录
-          New-Item -ItemType Directory -Path "tessdata" -Force
-          Write-Host "Created OCR language pack directory: tessdata"
-
-      - name: Create default OCR language directories
-        shell: powershell
-        run: |
-          # 创建默认的OCR语言包目录结构
-          New-Item -ItemType Directory -Path "tessdata" -Force
-          Write-Host "Created tessdata directory"
-          
-          # 下载一些常用的OCR语言包
-          $commonLangs = @("eng", "chi_sim")
-          
-          foreach ($lang in $commonLangs) {
-              $url = "https://github.com/tesseract-ocr/tessdata/raw/main/${lang}.traineddata"
-              $outputPath = "tessdata/${lang}.traineddata"
-              
-              try {
-                  Invoke-WebRequest -Uri $url -OutFile $outputPath -TimeoutSec 30
-                  Write-Host "Downloaded OCR language pack: $lang"
-              } catch {
-                  Write-Host "Failed to download $lang language pack: $($_.Exception.Message)"
-              }
-          }
-
-      - name: Build with PyInstaller (simplified)
+      - name: Build with PyInstaller
         shell: powershell
         run: |
           Write-Host 'Building Skylark Screen Translator...'
@@ -114,17 +106,14 @@ jobs:
           } else {
             Write-Host 'Available Python files:'
             Get-ChildItem *.py | Format-Table Name
-            throw 'No main program found. Please check your repository structure.'
+            throw 'Main program not found. Please check your repository structure.'
           }
           
-          # 使用简化的 PyInstaller 配置，避免问题模块
+          # Simplified PyInstaller configuration
           $pyinstallerArgs = @(
               "--name", "SkylarkTranslator",
               "--onedir",
               "--windowed",
-              "--add-data", "C:\Program Files\Tesseract-OCR\tesseract.exe;.",
-              "--add-data", "tessdata;tessdata",
-              "--add-binary", "C:\Program Files\Tesseract-OCR;Tesseract-OCR",
               "--hidden-import", "pytesseract",
               "--hidden-import", "numpy",
               "--hidden-import", "cv2",
@@ -135,12 +124,12 @@ jobs:
               "--hidden-import", "PyQt5.QtCore",
               "--hidden-import", "PyQt5.QtGui",
               "--hidden-import", "PyQt5.QtWidgets",
-              "--exclude-module", "stanza",  # 排除有问题的模块
-              "--exclude-module", "setuptools._distutils",  # 排除有问题的模块
+              "--exclude-module", "stanza",
+              "--exclude-module", "setuptools._distutils",
               $mainScript
           )
           
-          # 执行PyInstaller命令
+          # Execute PyInstaller command
           pyinstaller @pyinstallerArgs
           
           $exePath = 'dist\SkylarkTranslator\SkylarkTranslator.exe'
@@ -150,20 +139,20 @@ jobs:
               Write-Host "Build successful! Directory size: $sizeMB MB"
               echo "BUILD_SIZE_MB=$sizeMB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } else {
-              throw 'Build failed: executable file not found'
+              throw 'Build failed: Executable file not found'
           }
 
       - name: Create environment setup script
         shell: powershell
         run: |
-          # 创建环境设置脚本
+          # Create environment setup script
           $envScriptContent = @"
           @echo off
           chcp 65001 > nul
           echo Setting up environment for Skylark Translator...
 
           set APP_DIR=%~dp0
-          set TESSDATA_PREFIX=%APP_DIR%tessdata
+          set TESSDATA_PREFIX=%APP_DIR%\tessdata
 
           if not exist "%TESSDATA_PREFIX%" mkdir "%TESSDATA_PREFIX%"
 
@@ -185,7 +174,8 @@ jobs:
         run: |
           $releaseType = "${{ inputs.release_type }}"
           $version = Get-Date -Format "yyyy.MM.dd.HHmm"
-          $packageName = "SkylarkTranslator_Windows_${releaseType}_v${version}"
+          # As requested, don't include "test" in the package name
+          $packageName = "SkylarkTranslator_Windows_v${version}"
           $buildSize = "${{ env.BUILD_SIZE_MB }}"
           
           Write-Host "Creating distribution package: $packageName"
@@ -196,33 +186,33 @@ jobs:
           $readmeLines = @(
             "Skylark Screen Translator - Windows Version",
             "Version: $version",
-            "Type: $releaseType",
+            "Build Type: $releaseType",
             "Build Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
             "Application Size: $buildSize MB",
             "",
             "== IMPORTANT NOTES ==",
-            "This version uses a simplified build without Argos Translate.",
-            "OCR functionality is fully supported.",
+            "This version uses Google online translation service, no local translation models required.",
+            "OCR functionality requires language packs to be downloaded on first run.",
+            "The application will automatically download essential language packs (English and Simplified Chinese).",
+            "Additional language packs can be downloaded from within the application.",
             "",
-            "== How to Use ==",
+            "== HOW TO USE ==",
             "1. Extract this ZIP file to any folder (e.g., C:\SkylarkTranslator)",
             "2. Run skylark_launcher.bat to set up environment variables",
             "3. Or run SkylarkTranslator.exe directly",
+            "4. On first run, the application will download necessary OCR language packs",
+            "5. For additional OCR languages, use the built-in download feature in the application",
             "",
-            "== Known Limitations ==",
-            "- Translation features are not available in this build",
-            "- OCR functionality is fully supported",
+            "== INTERNET CONNECTION REQUIRED ==",
+            "- First run requires internet connection to download OCR language packs",
+            "- Google translation service requires internet connection",
             "",
-            "== File Locations ==",
-            "- Main executable: SkylarkTranslator.exe",
-            "- Launcher script: skylark_launcher.bat",
-            "- Tesseract data: .\tessdata\",
-            "",
-            "== Support ==",
+            "== SUPPORT ==",
             "If you encounter issues, please try:",
             "1. Running skylark_launcher.bat instead of the executable directly",
             "2. Ensuring your system has the latest Visual C++ Redistributable",
-            "3. Checking for Windows updates"
+            "3. Checking for Windows updates",
+            "4. Ensuring network connection is available for first-time setup"
           )
           
           $readmeLines | Out-File -FilePath "dist\README_$packageName.txt" -Encoding utf8
@@ -234,7 +224,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SkylarkTranslator-Windows-${{ inputs.release_type }}
+          name: SkylarkTranslator-Windows
           path: |
             ${{ env.PACKAGE_PATH }}
             dist/README_${{ env.PACKAGE_NAME }}.txt
@@ -246,21 +236,23 @@ jobs:
           $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
           $sizeMB = [math]::Round($size/1MB, 2)
           
-          Write-Host "## Build Complete - OCR Only Edition"
+          Write-Host "## Build Complete - Minimal Size Edition"
           Write-Host "- Release Type: ${{ inputs.release_type }}"
           Write-Host "- Application Size: ${{ env.BUILD_SIZE_MB }} MB"
           Write-Host "- Zip Package Size: ${sizeMB} MB"
           Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
           Write-Host ""
-          Write-Host "## Key Changes"
-          Write-Host "1. Removed Argos Translate: Translation features are not included"
-          Write-Host "2. Simplified Build: Excluded problematic modules (stanza, setuptools._distutils)"
-          Write-Host "3. Stable Dependencies: Used specific versions to ensure compatibility"
-          Write-Host "4. Tesseract Installation: Using Chocolatey package manager for reliable installation"
+          Write-Host "## Key Features"
+          Write-Host "1. Minimal Package Size: No bundled OCR language packs"
+          Write-Host "2. Removed Argos Translate: Using Google online translation service"
+          Write-Host "3. Simplified Build: Excluded problematic modules"
+          Write-Host "4. Direct Tesseract Installation: Downloaded and installed Tesseract directly"
+          Write-Host "5. Automatic Language Pack Download: Application downloads necessary OCR languages on first run"
           Write-Host ""
           Write-Host "## Download & Use"
           Write-Host "1. Download the ZIP file from Artifacts"
           Write-Host "2. Extract to any folder"
           Write-Host "3. Run skylark_launcher.bat for best compatibility"
-          Write-Host "4. OCR functionality should work fully"
-          Write-Host "5. Translation features are not available in this build"
+          Write-Host "4. On first run, the application will automatically download OCR language packs"
+          Write-Host "5. Use the in-app downloader for additional OCR languages"
+          Write-Host "6. Translation requires internet connection (uses Google translation service)"
