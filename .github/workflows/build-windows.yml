@@ -1,4 +1,4 @@
-name: Build Windows Release (Fixed Version)
+name: Build Windows Release (Fixed Version with Icon)
 
 on:
   workflow_dispatch:
@@ -68,12 +68,40 @@ jobs:
           pip install requests==2.31.0
           pip install pyinstaller==6.2.0
           
-          
           # 安装其他依赖
           pip install mss==9.0.1
           pip install pynput==1.7.6
           pip install screeninfo==0.8.1
           pip install ttkthemes==3.2.2
+
+      - name: Verify project files
+        shell: powershell
+        run: |
+          Write-Host "=== 验证项目文件 ==="
+          
+          # 检查主要文件
+          if (Test-Path 'skylark_screen_translator.py') {
+              Write-Host "✓ 找到主程序: skylark_screen_translator.py"
+          } else {
+              Write-Host "✗ 未找到主程序"
+              Write-Host "当前目录文件:"
+              Get-ChildItem *.py | Format-Table Name
+          }
+          
+          # 检查图标文件
+          $iconFiles = @("skylark.ico", "skylark.png")
+          foreach ($icon in $iconFiles) {
+              if (Test-Path $icon) {
+                  $size = (Get-Item $icon).Length
+                  Write-Host "✓ 找到图标文件: $icon (大小: $size 字节)"
+              } else {
+                  Write-Host "✗ 未找到图标文件: $icon"
+              }
+          }
+          
+          # 列出所有文件以便调试
+          Write-Host "`n=== 当前目录所有文件 ==="
+          Get-ChildItem | Format-Table Name, Length, LastWriteTime
 
       - name: Create language pack directories
         shell: powershell
@@ -81,7 +109,6 @@ jobs:
           # 创建语言包目录
           New-Item -ItemType Directory -Path "tessdata" -Force
           Write-Host "Created language pack directories: tessdata"
-
 
       - name: Create default OCR language directories
         shell: powershell
@@ -105,10 +132,10 @@ jobs:
               }
           }
 
-      - name: Build with PyInstaller (simplified)
+      - name: Build with PyInstaller (with icon support)
         shell: powershell
         run: |
-          Write-Host 'Building Skylark Screen Translator...'
+          Write-Host 'Building Skylark Screen Translator with Icon Support...'
           
           if (Test-Path 'skylark_screen_translator.py') {
             Write-Host 'Found main program: skylark_screen_translator.py'
@@ -119,13 +146,46 @@ jobs:
             throw 'No main program found. Please check your repository structure.'
           }
           
-          # 使用简化的 PyInstaller 配置，避免问题模块
+          # 检查图标文件并设置图标参数
+          $iconParam = @()
+          if (Test-Path 'skylark.ico') {
+              Write-Host '✓ Using skylark.ico as application icon'
+              $iconParam = @("--icon", "skylark.ico")
+          } elseif (Test-Path 'skylark.png') {
+              Write-Host '✓ Using skylark.png as application icon'
+              $iconParam = @("--icon", "skylark.png")
+          } else {
+              Write-Host '⚠ No icon file found, building without icon'
+          }
+          
+          # PyInstaller 参数 - 包含图标和资源文件
           $pyinstallerArgs = @(
               "--name", "SkylarkTranslator",
               "--onedir",
-              "--windowed",
+              "--windowed"
+          )
+          
+          # 添加图标参数（如果找到图标文件）
+          if ($iconParam.Count -gt 0) {
+              $pyinstallerArgs += $iconParam
+          }
+          
+          # 添加数据和二进制文件
+          $pyinstallerArgs += @(
               "--add-data", "C:\Program Files\Tesseract-OCR\tesseract.exe;.",
-              "--add-data", "tessdata;tessdata",
+              "--add-data", "tessdata;tessdata"
+          )
+          
+          # 添加图标文件到数据
+          if (Test-Path 'skylark.ico') {
+              $pyinstallerArgs += @("--add-data", "skylark.ico;.")
+          }
+          if (Test-Path 'skylark.png') {
+              $pyinstallerArgs += @("--add-data", "skylark.png;.")
+          }
+          
+          # 添加其他参数
+          $pyinstallerArgs += @(
               "--add-binary", "C:\Program Files\Tesseract-OCR;Tesseract-OCR",
               "--hidden-import", "pytesseract",
               "--hidden-import", "numpy",
@@ -137,12 +197,13 @@ jobs:
               "--hidden-import", "PyQt5.QtCore",
               "--hidden-import", "PyQt5.QtGui",
               "--hidden-import", "PyQt5.QtWidgets",
-              "--exclude-module", "stanza",  # 排除有问题的模块
-              "--exclude-module", "setuptools._distutils",  # 排除有问题的模块
+              "--exclude-module", "stanza",
+              "--exclude-module", "setuptools._distutils",
               $mainScript
           )
           
           # 执行PyInstaller命令
+          Write-Host "PyInstaller命令: pyinstaller $($pyinstallerArgs -join ' ')"
           pyinstaller @pyinstallerArgs
           
           $exePath = 'dist\SkylarkTranslator\SkylarkTranslator.exe'
@@ -150,120 +211,3 @@ jobs:
               $folderSize = (Get-ChildItem 'dist\SkylarkTranslator' -Recurse | Measure-Object -Property Length -Sum).Sum
               $sizeMB = [math]::Round($folderSize/1MB, 2)
               Write-Host "Build successful! Directory size: $sizeMB MB"
-              echo "BUILD_SIZE_MB=$sizeMB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          } else {
-              throw 'Build failed: executable file not found'
-          }
-
-      - name: Create environment setup script
-        shell: powershell
-        run: |
-          # 创建环境设置脚本
-          $envScriptContent = @"
-          @echo off
-          chcp 65001 > nul
-          echo Setting up environment for Skylark Translator...
-
-          set APP_DIR=%~dp0
-          set TESSDATA_PREFIX=%APP_DIR%tessdata
-
-          if not exist "%TESSDATA_PREFIX%" mkdir "%TESSDATA_PREFIX%"
-
-          set QT_QPA_PLATFORM=windows
-
-          echo Environment variables set:
-          echo   APP_DIR=%APP_DIR%
-          echo   TESSDATA_PREFIX=%TESSDATA_PREFIX%
-
-          echo.
-          echo Starting Skylark Translator...
-          start "" "%APP_DIR%SkylarkTranslator.exe"
-          "@
-          $envScriptContent | Out-File -FilePath "dist\SkylarkTranslator\skylark_launcher.bat" -Encoding utf8
-          Write-Host "Created environment setup script: skylark_launcher.bat"
-
-      - name: Create distribution package
-        shell: powershell
-        run: |
-          $releaseType = "${{ inputs.release_type }}"
-          $version = Get-Date -Format "yyyy.MM.dd.HHmm"
-          $packageName = "SkylarkTranslator_Windows_${releaseType}_v${version}"
-          $buildSize = "${{ env.BUILD_SIZE_MB }}"
-          
-          Write-Host "Creating distribution package: $packageName"
-          Write-Host "Application size: $buildSize MB"
-          
-          Compress-Archive -Path "dist\SkylarkTranslator" -DestinationPath "dist\$packageName.zip" -Force
-          
-          $readmeLines = @(
-            "Skylark Screen Translator - Windows Version",
-            "Version: $version",
-            "Type: $releaseType",
-            "Build Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
-            "Application Size: $buildSize MB",
-            "",
-            "== IMPORTANT NOTES ==",
-            "This version uses a simplified build to avoid compatibility issues.",
-            "Some advanced translation features may be limited.",
-            "",
-            "== How to Use ==",
-            "1. Extract this ZIP file to any folder (e.g., C:\SkylarkTranslator)",
-            "2. Run skylark_launcher.bat to set up environment variables",
-            "3. Or run SkylarkTranslator.exe directly",
-            "",
-            "== Known Limitations ==",
-            "- Advanced translation features may not be available",
-            "- Some language models may need to be downloaded manually",
-            "- OCR functionality is fully supported",
-            "",
-            "== File Locations ==",
-            "- Main executable: SkylarkTranslator.exe",
-            "- Launcher script: skylark_launcher.bat",
-            "- Tesseract data: .\tessdata\",
-            "",
-            "== Support ==",
-            "If you encounter issues, please try:",
-            "1. Running skylark_launcher.bat instead of the executable directly",
-            "2. Ensuring your system has the latest Visual C++ Redistributable",
-            "3. Checking for Windows updates"
-          )
-          
-          $readmeLines | Out-File -FilePath "dist\README_$packageName.txt" -Encoding utf8
-          
-          Write-Host "Package created: dist\$packageName.zip"
-          echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "PACKAGE_PATH=dist/$packageName.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: SkylarkTranslator-Windows-${{ inputs.release_type }}
-          path: |
-            ${{ env.PACKAGE_PATH }}
-            dist/README_${{ env.PACKAGE_NAME }}.txt
-          retention-days: 7
-
-      - name: Create build summary
-        shell: powershell
-        run: |
-          $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
-          $sizeMB = [math]::Round($size/1MB, 2)
-          
-          Write-Host "## Build Complete - Simplified Edition"
-          Write-Host "- Release Type: ${{ inputs.release_type }}"
-          Write-Host "- Application Size: ${{ env.BUILD_SIZE_MB }} MB"
-          Write-Host "- Zip Package Size: ${sizeMB} MB"
-          Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
-          Write-Host ""
-          Write-Host "## Key Changes"
-          Write-Host "1. Simplified Build: Excluded problematic modules (stanza, setuptools._distutils)"
-          Write-Host "2. Stable Dependencies: Used specific versions to ensure compatibility"
-          Write-Host "3. Fallback Implementation: Added graceful fallback for translation features"
-          Write-Host "4. Tesseract Installation: Now using Chocolatey package manager for reliable installation"
-          Write-Host ""
-          Write-Host "## Download & Use"
-          Write-Host "1. Download the ZIP file from Artifacts"
-          Write-Host "2. Extract to any folder"
-          Write-Host "3. Run skylark_launcher.bat for best compatibility"
-          Write-Host "4. OCR functionality should work fully"
-          Write-Host "5. Translation features may be limited but should not crash"
