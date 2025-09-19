@@ -1,4 +1,4 @@
-name: Build Windows Release (Fixed Version with Icon)
+name: Build Windows Release (Fixed Version)
 
 on:
   workflow_dispatch:
@@ -68,40 +68,12 @@ jobs:
           pip install requests==2.31.0
           pip install pyinstaller==6.2.0
           
+          
           # 安装其他依赖
           pip install mss==9.0.1
           pip install pynput==1.7.6
           pip install screeninfo==0.8.1
           pip install ttkthemes==3.2.2
-
-      - name: Verify project files
-        shell: powershell
-        run: |
-          Write-Host "=== 验证项目文件 ==="
-          
-          # 检查主要文件
-          if (Test-Path 'skylark_screen_translator.py') {
-              Write-Host "✓ 找到主程序: skylark_screen_translator.py"
-          } else {
-              Write-Host "✗ 未找到主程序"
-              Write-Host "当前目录文件:"
-              Get-ChildItem *.py | Format-Table Name
-          }
-          
-          # 检查图标文件
-          $iconFiles = @("skylark.ico", "skylark.png")
-          foreach ($icon in $iconFiles) {
-              if (Test-Path $icon) {
-                  $size = (Get-Item $icon).Length
-                  Write-Host "✓ 找到图标文件: $icon (大小: $size 字节)"
-              } else {
-                  Write-Host "✗ 未找到图标文件: $icon"
-              }
-          }
-          
-          # 列出所有文件以便调试
-          Write-Host "`n=== 当前目录所有文件 ==="
-          Get-ChildItem | Format-Table Name, Length, LastWriteTime
 
       - name: Create language pack directories
         shell: powershell
@@ -132,10 +104,10 @@ jobs:
               }
           }
 
-      - name: Build with PyInstaller (with icon support)
+      - name: Build with PyInstaller (simplified)
         shell: powershell
         run: |
-          Write-Host 'Building Skylark Screen Translator with Icon Support...'
+          Write-Host 'Building Skylark Screen Translator...'
           
           if (Test-Path 'skylark_screen_translator.py') {
             Write-Host 'Found main program: skylark_screen_translator.py'
@@ -146,46 +118,23 @@ jobs:
             throw 'No main program found. Please check your repository structure.'
           }
           
-          # 检查图标文件并设置图标参数
-          $iconParam = @()
+          # 检查图标文件是否存在
           if (Test-Path 'skylark.ico') {
-              Write-Host '✓ Using skylark.ico as application icon'
-              $iconParam = @("--icon", "skylark.ico")
-          } elseif (Test-Path 'skylark.png') {
-              Write-Host '✓ Using skylark.png as application icon'
-              $iconParam = @("--icon", "skylark.png")
+              Write-Host 'Found icon file: skylark.ico'
+              $iconOption = "--icon", "skylark.ico"
           } else {
-              Write-Host '⚠ No icon file found, building without icon'
+              Write-Host 'Icon file not found, building without icon'
+              $iconOption = ""
           }
           
-          # PyInstaller 参数 - 包含图标和资源文件
+          # 使用简化的 PyInstaller 配置，避免问题模块
           $pyinstallerArgs = @(
-              "--name", "SkylarkTranslator",
+              "--name", "skylarktranslator",
+              $iconOption,
               "--onedir",
-              "--windowed"
-          )
-          
-          # 添加图标参数（如果找到图标文件）
-          if ($iconParam.Count -gt 0) {
-              $pyinstallerArgs += $iconParam
-          }
-          
-          # 添加数据和二进制文件
-          $pyinstallerArgs += @(
+              "--windowed",
               "--add-data", "C:\Program Files\Tesseract-OCR\tesseract.exe;.",
-              "--add-data", "tessdata;tessdata"
-          )
-          
-          # 添加图标文件到数据
-          if (Test-Path 'skylark.ico') {
-              $pyinstallerArgs += @("--add-data", "skylark.ico;.")
-          }
-          if (Test-Path 'skylark.png') {
-              $pyinstallerArgs += @("--add-data", "skylark.png;.")
-          }
-          
-          # 添加其他参数
-          $pyinstallerArgs += @(
+              "--add-data", "tessdata;tessdata",
               "--add-binary", "C:\Program Files\Tesseract-OCR;Tesseract-OCR",
               "--hidden-import", "pytesseract",
               "--hidden-import", "numpy",
@@ -197,17 +146,121 @@ jobs:
               "--hidden-import", "PyQt5.QtCore",
               "--hidden-import", "PyQt5.QtGui",
               "--hidden-import", "PyQt5.QtWidgets",
-              "--exclude-module", "stanza",
-              "--exclude-module", "setuptools._distutils",
+              "--exclude-module", "stanza",  # 排除有问题的模块
+              "--exclude-module", "setuptools._distutils",  # 排除有问题的模块
               $mainScript
           )
           
           # 执行PyInstaller命令
-          Write-Host "PyInstaller命令: pyinstaller $($pyinstallerArgs -join ' ')"
           pyinstaller @pyinstallerArgs
           
-          $exePath = 'dist\SkylarkTranslator\SkylarkTranslator.exe'
+          $exePath = 'dist\skylarktranslator\skylarktranslator.exe'
           if (Test-Path $exePath) {
-              $folderSize = (Get-ChildItem 'dist\SkylarkTranslator' -Recurse | Measure-Object -Property Length -Sum).Sum
+              $folderSize = (Get-ChildItem 'dist\skylarktranslator' -Recurse | Measure-Object -Property Length -Sum).Sum
               $sizeMB = [math]::Round($folderSize/1MB, 2)
               Write-Host "Build successful! Directory size: $sizeMB MB"
+              echo "BUILD_SIZE_MB=$sizeMB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+              throw 'Build failed: executable file not found'
+          }
+
+      - name: Rename internal folder
+        shell: powershell
+        run: |
+          # 将 _internal 文件夹重命名为 _internal
+          $buildDir = "dist\skylarktranslator"
+          if (Test-Path "$buildDir\skylarktranslator.exe") {
+              # 重命名 _internal 文件夹
+              Rename-Item -Path "$buildDir\skylarktranslator" -NewName "_internal" -Force
+              Write-Host "Renamed internal folder to _internal"
+          } else {
+              Write-Error "Build directory structure not as expected"
+          }
+
+      - name: Create README file
+        shell: powershell
+        run: |
+          $buildSize = "${{ env.BUILD_SIZE_MB }}"
+          $readmeContent = @"
+Skylark Screen Translator - Windows Version
+
+== IMPORTANT NOTES ==
+This is a simplified build to ensure compatibility.
+Some advanced translation features may be limited.
+
+== How to Use ==
+1. Extract all files to a folder of your choice
+2. Run skylarktranslator.exe to start the application
+
+== File Structure ==
+- skylarktranslator.exe (main executable)
+- _internal/ (contains all required dependencies)
+- tessdata/ (OCR language data files)
+
+== Support ==
+If you encounter issues, please ensure:
+1. Your system has the latest Visual C++ Redistributable installed
+2. You have installed Windows updates
+3. Your antivirus is not blocking the application
+
+Build Size: $buildSize MB
+Build Date: $(Get-Date -Format 'yyyy-MM-dd')
+"@
+          $readmeContent | Out-File -FilePath "dist\skylarktranslator\README_SkylarkTranslator_Windows" -Encoding utf8
+          Write-Host "Created README file"
+
+      - name: Create distribution package
+        shell: powershell
+        run: |
+          $version = Get-Date -Format "yyyy.MM.dd.HHmm"
+          $packageName = "SkylarkTranslator_Windows_v${version}"
+          $buildSize = "${{ env.BUILD_SIZE_MB }}"
+          
+          Write-Host "Creating distribution package: $packageName"
+          Write-Host "Application size: $buildSize MB"
+          
+          # 创建压缩包，只包含要求的三个项目
+          Compress-Archive -Path `
+            "dist\skylarktranslator\skylarktranslator.exe",
+            "dist\skylarktranslator\_internal",
+            "dist\skylarktranslator\README_SkylarkTranslator_Windows" `
+            -DestinationPath "dist\$packageName.zip" -Force
+          
+          Write-Host "Package created: dist\$packageName.zip"
+          echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "PACKAGE_PATH=dist/$packageName.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SkylarkTranslator-Windows-${{ inputs.release_type }}
+          path: ${{ env.PACKAGE_PATH }}
+          retention-days: 7
+
+      - name: Create build summary
+        shell: powershell
+        run: |
+          $size = (Get-Item "${{ env.PACKAGE_PATH }}").Length
+          $sizeMB = [math]::Round($size/1MB, 2)
+          
+          Write-Host "## Build Complete - Simplified Edition"
+          Write-Host "- Release Type: ${{ inputs.release_type }}"
+          Write-Host "- Application Size: ${{ env.BUILD_SIZE_MB }} MB"
+          Write-Host "- Zip Package Size: ${sizeMB} MB"
+          Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
+          Write-Host ""
+          Write-Host "## Package Contents"
+          Write-Host "1. skylarktranslator.exe (main executable with icon)"
+          Write-Host "2. _internal/ (all required dependencies)"
+          Write-Host "3. README_SkylarkTranslator_Windows (documentation)"
+          Write-Host ""
+          Write-Host "## Key Changes"
+          Write-Host "1. Added application icon (skylark.ico)"
+          Write-Host "2. Simplified package structure with only three required items"
+          Write-Host "3. Removed test label from package name"
+          Write-Host "4. Removed launcher script to reduce confusion"
+          Write-Host ""
+          Write-Host "## Download & Use"
+          Write-Host "1. Download the ZIP file from Artifacts"
+          Write-Host "2. Extract all files to a folder"
+          Write-Host "3. Run skylarktranslator.exe directly"
