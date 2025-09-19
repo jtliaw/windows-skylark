@@ -82,6 +82,7 @@ jobs:
           New-Item -ItemType Directory -Path "tessdata" -Force
           Write-Host "Created language pack directories: tessdata"
 
+
       - name: Create default OCR language directories
         shell: powershell
         run: |
@@ -90,7 +91,7 @@ jobs:
           Write-Host "Created tessdata directory"
           
           # 下载一些常用的OCR语言包
-          $commonLangs = @("eng", "chi_sim")
+          $commonLangs = @("eng")
           
           foreach ($lang in $commonLangs) {
               $url = "https://github.com/tesseract-ocr/tessdata/raw/main/${lang}.traineddata"
@@ -118,19 +119,9 @@ jobs:
             throw 'No main program found. Please check your repository structure.'
           }
           
-          # 检查图标文件是否存在
-          if (Test-Path 'skylark.ico') {
-              Write-Host 'Found icon file: skylark.ico'
-              $iconOption = "--icon", "skylark.ico"
-          } else {
-              Write-Host 'Icon file not found, building without icon'
-              $iconOption = ""
-          }
-          
           # 使用简化的 PyInstaller 配置，避免问题模块
           $pyinstallerArgs = @(
-              "--name", "skylarktranslator",
-              $iconOption,
+              "--name", "SkylarkTranslator",
               "--onedir",
               "--windowed",
               "--add-data", "C:\Program Files\Tesseract-OCR\tesseract.exe;.",
@@ -154,9 +145,9 @@ jobs:
           # 执行PyInstaller命令
           pyinstaller @pyinstallerArgs
           
-          $exePath = 'dist\skylarktranslator\skylarktranslator.exe'
+          $exePath = 'dist\SkylarkTranslator\SkylarkTranslator.exe'
           if (Test-Path $exePath) {
-              $folderSize = (Get-ChildItem 'dist\skylarktranslator' -Recurse | Measure-Object -Property Length -Sum).Sum
+              $folderSize = (Get-ChildItem 'dist\SkylarkTranslator' -Recurse | Measure-Object -Property Length -Sum).Sum
               $sizeMB = [math]::Round($folderSize/1MB, 2)
               Write-Host "Build successful! Directory size: $sizeMB MB"
               echo "BUILD_SIZE_MB=$sizeMB" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -164,67 +155,50 @@ jobs:
               throw 'Build failed: executable file not found'
           }
 
-      - name: Rename internal folder
-        shell: powershell
-        run: |
-          # 将 _internal 文件夹重命名为 _internal
-          $buildDir = "dist\skylarktranslator"
-          if (Test-Path "$buildDir\skylarktranslator.exe") {
-              # 重命名 _internal 文件夹
-              Rename-Item -Path "$buildDir\skylarktranslator" -NewName "_internal" -Force
-              Write-Host "Renamed internal folder to _internal"
-          } else {
-              Write-Error "Build directory structure not as expected"
-          }
-
-      - name: Create README file
-        shell: powershell
-        run: |
-          $buildSize = "${{ env.BUILD_SIZE_MB }}"
-          $readmeContent = @"
-           Skylark Screen Translator - Windows Version
-
-            == IMPORTANT NOTES ==
-            This is a simplified build to ensure compatibility.
-            Some advanced translation features may be limited.
-
-            == How to Use ==
-            1. Extract all files to a folder of your choice
-            2. Run skylarktranslator.exe to start the application
-
-             == File Structure ==
-             - skylarktranslator.exe (main executable)
-             - _internal/ (contains all required dependencies)
-             - tessdata/ (OCR language data files)
-
-             == Support ==
-             If you encounter issues, please ensure:
-             1. Your system has the latest Visual C++ Redistributable installed
-             2. You have installed Windows updates
-             3. Your antivirus is not blocking the application
-
-             Build Size: $buildSize MB
-             Build Date: $(Get-Date -Format 'yyyy-MM-dd')
-             "@
-          $readmeContent | Out-File -FilePath "dist\skylarktranslator\README_SkylarkTranslator_Windows" -Encoding utf8
-          Write-Host "Created README file"
 
       - name: Create distribution package
         shell: powershell
         run: |
+          $releaseType = "${{ inputs.release_type }}"
           $version = Get-Date -Format "yyyy.MM.dd.HHmm"
-          $packageName = "SkylarkTranslator_Windows_v${version}"
+          $packageName = "SkylarkTranslator_Windows_${releaseType}_v${version}"
           $buildSize = "${{ env.BUILD_SIZE_MB }}"
           
           Write-Host "Creating distribution package: $packageName"
           Write-Host "Application size: $buildSize MB"
           
-          # 创建压缩包，只包含要求的三个项目
-          Compress-Archive -Path `
-            "dist\skylarktranslator\skylarktranslator.exe",
-            "dist\skylarktranslator\_internal",
-            "dist\skylarktranslator\README_SkylarkTranslator_Windows" `
-            -DestinationPath "dist\$packageName.zip" -Force
+          Compress-Archive -Path "dist\SkylarkTranslator" -DestinationPath "dist\$packageName.zip" -Force
+          
+          $readmeLines = @(
+            "Skylark Screen Translator - Windows Version",
+            "Version: $version",
+            "Type: $releaseType",
+            "Build Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+            "Application Size: $buildSize MB",
+            "",
+            "== IMPORTANT NOTES ==",
+            "This version uses a simplified build to avoid compatibility issues.",
+            "Some advanced translation features may be limited.",
+            "",
+            "== How to Use ==",
+            "1. Extract this ZIP file to any folder (e.g., C:\SkylarkTranslator)",
+            "3. Or run SkylarkTranslator.exe directly",
+            "",
+            "== Known Limitations ==",
+            "- Advanced translation features may not be available",
+            "- Some language models may need to be downloaded manually",
+            "- OCR functionality is fully supported",
+            "",
+            "== File Locations ==",
+            "- Main executable: SkylarkTranslator.exe",
+            "- Tesseract data: .\tessdata\",
+            "",
+            "== Support ==",
+            "1. Ensuring your system has the latest Visual C++ Redistributable",
+            "2. Checking for Windows updates"
+          )
+          
+          $readmeLines | Out-File -FilePath "dist\README_$packageName.txt" -Encoding utf8
           
           Write-Host "Package created: dist\$packageName.zip"
           echo "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -234,7 +208,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SkylarkTranslator-Windows-${{ inputs.release_type }}
-          path: ${{ env.PACKAGE_PATH }}
+          path: |
+            ${{ env.PACKAGE_PATH }}
+            dist/README_${{ env.PACKAGE_NAME }}.txt
           retention-days: 7
 
       - name: Create build summary
@@ -249,18 +225,14 @@ jobs:
           Write-Host "- Zip Package Size: ${sizeMB} MB"
           Write-Host "- File Name: ${{ env.PACKAGE_NAME }}.zip"
           Write-Host ""
-          Write-Host "## Package Contents"
-          Write-Host "1. skylarktranslator.exe (main executable with icon)"
-          Write-Host "2. _internal/ (all required dependencies)"
-          Write-Host "3. README_SkylarkTranslator_Windows (documentation)"
-          Write-Host ""
           Write-Host "## Key Changes"
-          Write-Host "1. Added application icon (skylark.ico)"
-          Write-Host "2. Simplified package structure with only three required items"
-          Write-Host "3. Removed test label from package name"
-          Write-Host "4. Removed launcher script to reduce confusion"
+          Write-Host "1. Simplified Build: Excluded problematic modules (stanza, setuptools._distutils)"
+          Write-Host "2. Stable Dependencies: Used specific versions to ensure compatibility"
+          Write-Host "3. Fallback Implementation: Added graceful fallback for translation features"
+          Write-Host "4. Tesseract Installation: Now using Chocolatey package manager for reliable installation"
           Write-Host ""
           Write-Host "## Download & Use"
           Write-Host "1. Download the ZIP file from Artifacts"
-          Write-Host "2. Extract all files to a folder"
-          Write-Host "3. Run skylarktranslator.exe directly"
+          Write-Host "2. Extract to any folder"
+          Write-Host "3. OCR functionality should work fully"
+          Write-Host "4. Translation features may be limited but should not crash"
