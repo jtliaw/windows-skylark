@@ -182,30 +182,30 @@ jobs:
         run: |
           $buildSize = "${{ env.BUILD_SIZE_MB }}"
           $readmeContent = @"
-Skylark Screen Translator - Windows Version
+           Skylark Screen Translator - Windows Version
 
-== IMPORTANT NOTES ==
-This is a simplified build to ensure compatibility.
-Some advanced translation features may be limited.
+            == IMPORTANT NOTES ==
+            This is a simplified build to ensure compatibility.
+            Some advanced translation features may be limited.
 
-== How to Use ==
-1. Extract all files to a folder of your choice
-2. Run skylarktranslator.exe to start the application
+            == How to Use ==
+            1. Extract all files to a folder of your choice
+            2. Run skylarktranslator.exe to start the application
 
-== File Structure ==
-- skylarktranslator.exe (main executable)
-- _internal/ (contains all required dependencies)
-- tessdata/ (OCR language data files)
+             == File Structure ==
+             - skylarktranslator.exe (main executable)
+             - _internal/ (contains all required dependencies)
+             - tessdata/ (OCR language data files)
 
-== Support ==
-If you encounter issues, please ensure:
-1. Your system has the latest Visual C++ Redistributable installed
-2. You have installed Windows updates
-3. Your antivirus is not blocking the application
+             == Support ==
+             If you encounter issues, please ensure:
+             1. Your system has the latest Visual C++ Redistributable installed
+             2. You have installed Windows updates
+             3. Your antivirus is not blocking the application
 
-Build Size: $buildSize MB
-Build Date: $(Get-Date -Format 'yyyy-MM-dd')
-"@
+             Build Size: $buildSize MB
+             Build Date: $(Get-Date -Format 'yyyy-MM-dd')
+             "@
           $readmeContent | Out-File -FilePath "dist\skylarktranslator\README_SkylarkTranslator_Windows" -Encoding utf8
           Write-Host "Created README file"
 
