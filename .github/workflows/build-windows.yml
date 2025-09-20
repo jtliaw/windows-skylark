@@ -6,7 +6,7 @@ on:
       release_type:
         description: 'Release Type'
         required: true
-        default: 'test'
+        default: 'stable'
         type: choice
         options:
           - test
