@@ -1,4 +1,4 @@
-# 🚀 Skylark Screen Translator Windows版
+# 🚀 Skylark Screen Translator Windows Online版
 
 <div align="center">
 
