@@ -118,14 +118,21 @@ jobs:
             Get-ChildItem *.py | Format-Table Name
             throw 'No main program found. Please check your repository structure.'
           }
+
+          # 检查图标文件是否存在
+          if (-not (Test-Path 'skylark.ico')) {
+            throw 'Icon file skylark.ico not found in the root directory'
+          }
           
           # 使用简化的 PyInstaller 配置，避免问题模块
           $pyinstallerArgs = @(
               "--name", "SkylarkTranslator",
               "--onedir",
               "--windowed",
+              "--icon", "skylark.ico",  # 添加图标参数
               "--add-data", "C:\Program Files\Tesseract-OCR\tesseract.exe;.",
               "--add-data", "tessdata;tessdata",
+              "--add-data", "skylark.ico;.",  # 将图标文件也包含在分发包中
               "--add-binary", "C:\Program Files\Tesseract-OCR;Tesseract-OCR",
               "--hidden-import", "pytesseract",
               "--hidden-import", "numpy",
@@ -192,6 +199,7 @@ jobs:
             "== File Locations ==",
             "- Main executable: SkylarkTranslator.exe",
             "- Tesseract data: .\tessdata\",
+            "- Application icon: .\skylark.ico",
             "",
             "== Support ==",
             "1. Ensuring your system has the latest Visual C++ Redistributable",
